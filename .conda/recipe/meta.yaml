@@ -89,6 +89,6 @@ about:
 
   home: https://github.com/dl5eu/gr-dl5eu
   license: GPL-3.0-or-later
-#  license_file: LICENSE
+  license_file: LICENSE
   summary: GNU Radio dl5eu module
   description: Module gr-dl5eu for GNU Radio

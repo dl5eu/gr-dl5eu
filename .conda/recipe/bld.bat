@@ -1,9 +1,9 @@
 setlocal EnableDelayedExpansion
 @echo on
 
-set PREFIX="%CONDA_PREFIX%"
-set LIBRARY_PREFIX="%CONDA_PREFIX%\Library"
-set SP_DIR="%CONDA_PREFIX%\Lib\site-packages"
+:: set PREFIX="%CONDA_PREFIX%"
+:: set LIBRARY_PREFIX="%CONDA_PREFIX%\Library"
+:: set SP_DIR="%CONDA_PREFIX%\Lib\site-packages"
 set CPU_COUNT=2
 
 :: Make a build folder and change to it
