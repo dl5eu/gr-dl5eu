@@ -1,0 +1,71 @@
+id: dl5eu_dvbt_tps_decoder
+label: DVB-T TPS Decoder
+category: '[dl5eu]'
+
+templates:
+  imports: from gnuradio import dl5eu
+  make: dl5eu.dvbt_tps_decoder(${transmission_mode.val}, ${print_tps_data})
+
+parameters:
+-   id: transmission_mode
+    label: Transmission Mode
+    dtype: enum
+    default: T2k
+    options: [T2k, T8k]
+    option_labels: [2K, 8K]
+    option_attributes:
+        active_carriers: [1705, 6817]
+        payload_carriers: [1512, 6048]
+        val: [dtv.T2k, dtv.T8k]
+-   id: print_tps_data
+    label: Print TPS data
+    dtype: enum
+    default: 'False'
+    options: ['True', 'False']
+    option_labels: ['Yes', 'No']
+-   id: show_ports
+    label: Show message ports
+    dtype: bool
+    default: 'True'
+    options: ['False', 'True']
+    option_labels: ['Yes', 'No']
+
+inputs:
+-   label: in
+    domain: stream
+    dtype: complex
+    vlen: ${transmission_mode.active_carriers}
+
+outputs:
+-   label: out
+    domain: stream
+    dtype: complex
+    vlen: ${transmission_mode.payload_carriers}
+-   label: const
+    domain: message
+    dtype: int
+    vlen: 1
+    optional: true
+    hide: ${show_ports}
+-   label: mode
+    domain: message
+    dtype: int
+    vlen: 1
+    optional: true
+    hide: ${show_ports}
+-   label: fec
+    domain: message
+    dtype: int
+    vlen: 1
+    optional: true
+    hide: ${show_ports}
+-   label: guard
+    domain: message
+    dtype: int
+    vlen: 1
+    optional: true
+    hide: ${show_ports}
+
+#  'file_format' specifies the version of the GRC yml format used in the file
+#  and should usually not be changed.
+file_format: 1

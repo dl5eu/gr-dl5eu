@@ -1,0 +1,67 @@
+id: dl5eu_dvbt_ofdm_synchronization
+label: DVB-T OFDM Synchronization
+category: '[dl5eu]'
+
+templates:
+  imports: from gnuradio import dl5eu
+  make: dl5eu.dvbt_ofdm_synchronization(${transmission_mode.val}, ${guard_interval.val}, ${snr}, ${interpolate})
+
+parameters:
+- id: transmission_mode
+  label: Transmission Mode
+  dtype: enum
+  options: [T2k, T8k]
+  option_labels: [2K, 8K]
+  option_attributes:
+    fft_length: [2048, 8192]
+    num_carriers: [1705, 6817]
+    payload_carriers: [1512, 6048]
+    val: [dtv.T2k, dtv.T8k]
+- id: guard_interval
+  label: Guard Interval
+  dtype: enum
+  options: [GI_1_32, GI_1_16, GI_1_8, GI_1_4]
+  option_labels: [1/32, 1/16, 1/8, 1/4]
+  option_attributes:
+    val: [dtv.GI_1_32, dtv.GI_1_16, dtv.GI_1_8, dtv.GI_1_4]
+- id: snr
+  label: SNR
+  dtype: float
+  default: '10.0'
+- id: interpolate
+  label: Interpolate
+  dtype: enum
+  default: 'True'
+  options: ['True', 'False']
+  option_labels: ['Yes', 'No']
+
+inputs:
+- label: in
+  domain: stream
+  dtype: complex
+  vlen: 1
+  optional: false
+
+outputs:
+- label: out
+  domain: stream
+  dtype: complex
+  vlen: ${transmission_mode.num_carriers}
+  optional: false
+- label: ch. taps
+  domain: stream
+  dtype: complex
+  vlen: ${transmission_mode.num_carriers}
+  optional: true
+- label: freq. err.
+  domain: stream
+  dtype: float
+  vlen: 1
+  optional: true
+- label: samp. err.
+  domain: stream
+  dtype: float
+  vlen: 1
+  optional: true
+
+file_format: 1
