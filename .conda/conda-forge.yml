@@ -2,16 +2,14 @@
 # documentation on possible keys and values.
 
 # uncomment to enable cross-compiled builds
-#build_platform:
-#  linux_aarch64: linux_64
-#  linux_ppc64le: linux_64
-#  osx_arm64: osx_64
+build_platform:
+ linux_aarch64: linux_64
+ linux_ppc64le: linux_64
+ osx_arm64: osx_64
 clone_depth: 0
 github_actions:
   cancel_in_progress: false
   store_build_artifacts: true
-os_version:
-  linux_64: cos7
 provider:
   linux: github_actions
   osx: github_actions
