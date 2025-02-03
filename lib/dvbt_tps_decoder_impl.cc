@@ -189,7 +189,8 @@ bool dvbt_tps_decoder_impl::process_tps_data(const gr_complex* in)
                 }
             } else {
                 printf("TPS Decoder: process_tps_data(): frame error -> resync!\n");
-                d_resync = true;
+                d_sync_start = true;
+                // d_resync = true;
                 d_frame_sync = false;
             }
         }
@@ -396,7 +397,7 @@ dvbt_tps_decoder_impl::dvbt_tps_decoder_impl(dvbt_transmission_mode_t transmissi
     d_since_last_tps = 0;
 
     d_frame_end = false;
-    d_resync = false;
+    // d_resync = false;
 
     // Register message ports
     message_port_register_out(d_mp_mod_scheme);
@@ -445,19 +446,19 @@ int dvbt_tps_decoder_impl::general_work(int noutput_items,
 
         // We check if the block upstream signaled us to re-sync, e.g. because one
         // or more symbols have been lost. If so, this is also signaled downstream.
-        this->get_tags_in_window(tags, 0, i, i + 1, pmt::string_to_symbol("resync"));
-        if (!tags.empty()) {
-            if (!d_resync) {
-                d_resync = true;
-                d_frame_sync = false;
-                printf("TPS decoder: resync received from %s\n",
-                       pmt::symbol_to_string(tags[0].srcid).c_str());
-            }
-        }
+        // this->get_tags_in_window(tags, 0, i, i + 1, pmt::string_to_symbol("resync"));
+        // if (!tags.empty()) {
+        //     if (!d_resync) {
+        //         d_resync = true;
+        //         d_frame_sync = false;
+        //         printf("TPS decoder: resync received from %s\n",
+        //                pmt::symbol_to_string(tags[0].srcid).c_str());
+        //     }
+        // }
 
         if (d_frame_end) {
-            //  Being here means that the previous OFDM symbol constituted the end of a
-            //  frame.
+            // Being here means that the previous OFDM symbol constituted the end of a
+            // frame.
             d_frame_index = (d_tps_info.frame_number + 1) % d_frames_per_superframe;
             d_rel_symbol_index = 0;
             d_symbol_index = 0;
@@ -469,7 +470,7 @@ int dvbt_tps_decoder_impl::general_work(int noutput_items,
                 d_tps_info.code_rate_hp != d_prev_tps_info.code_rate_hp ||
                 d_tps_info.code_rate_lp != d_prev_tps_info.code_rate_lp ||
                 d_tps_info.guard_interval != d_prev_tps_info.guard_interval ||
-                d_tps_info.cell_id != d_prev_tps_info.cell_id || d_resync) {
+                d_tps_info.cell_id != d_prev_tps_info.cell_id || d_sync_start) {
                 d_prev_tps_info = d_tps_info;
                 d_sync_start = true;
                 message_port_pub(
@@ -495,14 +496,14 @@ int dvbt_tps_decoder_impl::general_work(int noutput_items,
 
         d_frame_end = process_tps_data(&in[i * d_num_carriers]);
 
-        if (d_sync_start || d_resync) {
-            // if (d_resync) {
-            // if (d_sync_start) {
+        // if (d_sync_start || d_resync) {
+        // if (d_resync) {
+        if (d_sync_start) {
             //  If sync_start or  resync have been signaled, wait for the next superframe.
             if (d_frame_sync && d_symbol_index == 0 && d_frame_index == 0) {
                 // This is a superframe start, we signal it downstream.
                 d_sync_start = false;
-                d_resync = false;
+                // d_resync = false;
                 const uint64_t offset = this->nitems_written(0) + i;
                 pmt::pmt_t key = pmt::string_to_symbol("superframe_start");
                 pmt::pmt_t value = pmt::from_long(0xaa);

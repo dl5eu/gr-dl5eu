@@ -210,7 +210,7 @@ private:
      * \param alpha The parameter is used to update both the average maximum and minimum
      * (exponential filter, or single-root iir).
      */
-    void init_peak_detection(float threshold_factor_inc, float alpha);
+    void init_peak_detection(float threshold_factor_rise, float alpha);
 
     /*!
      * \brief Given datain and its length, the method returns the peak position and its
