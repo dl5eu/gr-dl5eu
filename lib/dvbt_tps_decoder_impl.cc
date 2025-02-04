@@ -190,7 +190,7 @@ bool dvbt_tps_decoder_impl::process_tps_data(const gr_complex* in)
             } else {
                 printf("TPS Decoder: process_tps_data(): frame error -> resync!\n");
                 d_sync_start = true;
-                // d_resync = true;
+                d_resync = true;
                 d_frame_sync = false;
             }
         }
@@ -357,7 +357,8 @@ dvbt_tps_decoder_impl::dvbt_tps_decoder_impl(dvbt_transmission_mode_t transmissi
       d_symbols_per_frame{ d_config.d_symbols_per_frame },
       d_frames_per_superframe{ d_config.d_frames_per_superframe },
       d_prev_tps_symbol(d_num_tps_carriers),
-      d_resync{ true },
+      d_frame_end{false},
+      d_resync{ false },
       d_rel_symbol_index{ 0 },
       d_prev_rel_symbol_index{ 0 },
       d_symbol_index{ 0 },
@@ -365,7 +366,7 @@ dvbt_tps_decoder_impl::dvbt_tps_decoder_impl(dvbt_transmission_mode_t transmissi
       d_frame_index{ 0 },
       d_prev_frame_index{ 0 },
       d_data_carriers(4 * d_num_data_carriers),
-      d_sync_start{ true },
+      d_sync_start{ false },
       d_frame_sync{ false },
       d_tps_info{},
       d_prev_tps_info{},
@@ -395,9 +396,6 @@ dvbt_tps_decoder_impl::dvbt_tps_decoder_impl(dvbt_transmission_mode_t transmissi
     for (int i = 0; i < d_symbols_per_frame; ++i)
         d_rcv_tps_data.push_back(0);
     d_since_last_tps = 0;
-
-    d_frame_end = false;
-    // d_resync = false;
 
     // Register message ports
     message_port_register_out(d_mp_mod_scheme);
@@ -446,15 +444,15 @@ int dvbt_tps_decoder_impl::general_work(int noutput_items,
 
         // We check if the block upstream signaled us to re-sync, e.g. because one
         // or more symbols have been lost. If so, this is also signaled downstream.
-        // this->get_tags_in_window(tags, 0, i, i + 1, pmt::string_to_symbol("resync"));
-        // if (!tags.empty()) {
-        //     if (!d_resync) {
-        //         d_resync = true;
-        //         d_frame_sync = false;
-        //         printf("TPS decoder: resync received from %s\n",
-        //                pmt::symbol_to_string(tags[0].srcid).c_str());
-        //     }
-        // }
+        this->get_tags_in_window(tags, 0, i, i + 1, pmt::string_to_symbol("resync"));
+        if (!tags.empty()) {
+            if (!d_resync) {
+                d_resync = true;
+                d_frame_sync = false;
+                printf("TPS decoder: resync received from %s\n",
+                       pmt::symbol_to_string(tags[0].srcid).c_str());
+            }
+        }
 
         if (d_frame_end) {
             // Being here means that the previous OFDM symbol constituted the end of a
@@ -463,16 +461,23 @@ int dvbt_tps_decoder_impl::general_work(int noutput_items,
             d_rel_symbol_index = 0;
             d_symbol_index = 0;
             d_frame_sync = true;
+        } else {
+            d_rel_symbol_index = (d_rel_symbol_index + 1) % 4;
+            d_symbol_index = (d_symbol_index + 1) % d_symbols_per_frame;
+        }
 
-            // When a change is detected, send the TPS data
-            if (d_tps_info.constellation != d_prev_tps_info.constellation ||
-                d_tps_info.hierarchy_info != d_prev_tps_info.hierarchy_info ||
-                d_tps_info.code_rate_hp != d_prev_tps_info.code_rate_hp ||
-                d_tps_info.code_rate_lp != d_prev_tps_info.code_rate_lp ||
-                d_tps_info.guard_interval != d_prev_tps_info.guard_interval ||
-                d_tps_info.cell_id != d_prev_tps_info.cell_id || d_sync_start) {
+        d_frame_end = process_tps_data(&in[i * d_num_carriers]);
+
+        if (d_sync_start || d_resync) {
+        // if (d_resync) {
+        // if (d_sync_start) {
+            //  If sync_start or  resync have been signaled, wait for the next superframe.
+            if (d_frame_sync && d_symbol_index == 0 && d_frame_index == 0) {
+                // This is a superframe start, we signal it downstream.
+                d_sync_start = false;
+                d_resync = false;
+                // Send TPS information
                 d_prev_tps_info = d_tps_info;
-                d_sync_start = true;
                 message_port_pub(
                     d_mp_mod_scheme,
                     pmt::cons(pmt::PMT_NIL, pmt::from_long(d_tps_info.constellation)));
@@ -488,22 +493,6 @@ int dvbt_tps_decoder_impl::general_work(int noutput_items,
                 if (d_print_tps_data) {
                     print_tps_info(d_tps_info);
                 }
-            }
-        } else {
-            d_rel_symbol_index = (d_rel_symbol_index + 1) % 4;
-            d_symbol_index = (d_symbol_index + 1) % d_symbols_per_frame;
-        }
-
-        d_frame_end = process_tps_data(&in[i * d_num_carriers]);
-
-        // if (d_sync_start || d_resync) {
-        // if (d_resync) {
-        if (d_sync_start) {
-            //  If sync_start or  resync have been signaled, wait for the next superframe.
-            if (d_frame_sync && d_symbol_index == 0 && d_frame_index == 0) {
-                // This is a superframe start, we signal it downstream.
-                d_sync_start = false;
-                // d_resync = false;
                 const uint64_t offset = this->nitems_written(0) + i;
                 pmt::pmt_t key = pmt::string_to_symbol("superframe_start");
                 pmt::pmt_t value = pmt::from_long(0xaa);
@@ -518,13 +507,13 @@ int dvbt_tps_decoder_impl::general_work(int noutput_items,
 
         // Currently, we obtain the relative symbol index (between 0 and 3) from the block
         // upstream
-        this->get_tags_in_window(
-            tags, 0, i, i + 1, pmt::string_to_symbol("relative_symbol_index"));
-        if (!tags.empty()) {
-            d_rel_symbol_index = pmt::to_long(tags[0].value);
-        } else {
-            printf("TPS decoder: No relative symbol index found in the tag stream.\n");
-        }
+        // this->get_tags_in_window(
+        //     tags, 0, i, i + 1, pmt::string_to_symbol("relative_symbol_index"));
+        // if (!tags.empty()) {
+        //     d_rel_symbol_index = pmt::to_long(tags[0].value);
+        // } else {
+        //     printf("TPS decoder: No relative symbol index found in the tag stream.\n");
+        // }
 
         // Send a tag for each OFDM symbol informing about the symbol index.
         const uint64_t offset = this->nitems_written(0) + i;
