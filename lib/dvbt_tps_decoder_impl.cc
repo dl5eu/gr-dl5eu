@@ -156,8 +156,8 @@ bool dvbt_tps_decoder_impl::process_tps_data(const gr_complex* in,
         } else {
             d_symbol_index_known = false;
             end_of_frame = false;
-            d_sync_start = true;
-            d_resync = true;
+            // d_sync_start = true;
+            // d_resync = true;
             d_frame_sync = false;
             printf("TPS Decoder: process_tps_data(): frame error -> resync!\n");
         }
@@ -178,8 +178,8 @@ bool dvbt_tps_decoder_impl::process_tps_data(const gr_complex* in,
         } else {
             d_symbol_index_known = false;
             end_of_frame = false;
-            d_sync_start = true;
-            d_resync = true;
+            // d_sync_start = true;
+            // d_resync = true;
             d_frame_sync = false;
             printf("TPS Decoder: process_tps_data(): frame error -> resync!\n");
         }
@@ -487,6 +487,16 @@ int dvbt_tps_decoder_impl::general_work(int noutput_items,
             }
         }
 
+        if (d_frame_end) {
+            // Being here means that the previous OFDM symbol constituted the
+            // end of a frame. The current symbol belongs to the next frame!
+            d_frame_index = (d_frame_index + 1) % d_frames_per_superframe;
+            d_symbol_index = 0;
+            d_frame_sync = true;
+        } else {
+            d_symbol_index = (d_symbol_index + 1) % d_symbols_per_frame;
+        }
+
         // We obtain the relative symbol index (between 0 and 3) from the block upstream
         this->get_tags_in_window(
             tags, 0, i, i + 1, pmt::string_to_symbol("relative_symbol_index"));
@@ -499,27 +509,17 @@ int dvbt_tps_decoder_impl::general_work(int noutput_items,
             (d_rel_symbol_index - d_prev_rel_symbol_index + 4) % 4;
         d_prev_rel_symbol_index = d_rel_symbol_index;
         if (diff_rel_symbol_index != 1) {
-            if (!(d_sync_start | d_resync)) {
+            if (!(d_sync_start | d_resync | !d_frame_sync)) {
                 printf("TPS decoder: One or more symbols lost.\n");
             }
-        }
-
-        if (d_frame_end) {
-            // Being here means that the previous OFDM symbol constituted the
-            // end of a frame. The current symbol belongs to the next frame!
-            d_frame_index = (d_frame_index + 1) % d_frames_per_superframe;
-            d_symbol_index = 0;
-            d_frame_sync = true;
-        } else {
-            d_symbol_index = (d_symbol_index + 1) % d_symbols_per_frame;
         }
 
         // Process and decode the TPS data
         d_frame_end = process_tps_data(&in[i * d_num_carriers], diff_rel_symbol_index);
 
-        if (d_sync_start || d_resync) {
+        // if (d_sync_start || d_resync) {
+        if (d_sync_start) {
             // if (d_resync) {
-            // if (d_sync_start) {
             //  If sync_start or  resync have been signaled, wait for the next superframe.
             //if (d_frame_sync && d_symbol_index == 0 && d_frame_index == 0 && d_tps_complete) {
             if (d_symbol_index == 0 && d_frame_index == 0 && d_tps_complete) {
