@@ -25,7 +25,7 @@ namespace dl5eu {
 class dvbt_tps_decoder_impl : public dvbt_tps_decoder
 {
     typedef struct {
-        uint8_t frame_number;
+        uint8_t frame_index;
         uint8_t constellation;
         uint8_t hierarchy_info;
         uint8_t code_rate_hp;
@@ -117,12 +117,12 @@ private:
     int d_prev_rel_symbol_index;
     int d_symbol_index;
     int d_prev_symbol_index;
+    bool d_symbol_index_known;
 
     int d_frame_index;
     int d_prev_frame_index;
 
-    // how many symbols ago we saw a complete tps
-    int d_since_last_tps;
+    bool d_tps_complete;
 
     // A list of the data carriers for the current configuration (mode), one
     // for each symbol in a frame.
@@ -152,11 +152,13 @@ private:
      * check whether the sync word is present at the beginning, and if it passes the BCH
      * parity code.
      *
-     * Our present implementation simply performs the differential demodulation (TPS is
+     * The present implementation simply performs the differential demodulation (TPS is
      * transmitted in DBPSK) for every carrier, and then performs a majority vote between
      * all carriers to verify which bit was sent.
      */
-    bool process_tps_data(const gr_complex* in);
+    bool process_tps_data(const gr_complex* in, const int diff_symbol_index);
+
+    void decode_tps_data();
 
     void print_coderate(coderate_t coderate);
 

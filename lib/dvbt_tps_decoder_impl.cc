@@ -89,20 +89,16 @@ void dvbt_tps_decoder_impl::create_data_carrier_list()
     }
 }
 
-/*
- * The aim of this method is to 1) decode the TPS carriers and 2) detect the end of a
- * frame indicated by the complete reception of the TPS.
- */
-bool dvbt_tps_decoder_impl::process_tps_data(const gr_complex* in)
+bool dvbt_tps_decoder_impl::process_tps_data(const gr_complex* in,
+                                             const int diff_symbol_index)
 {
     bool end_of_frame = false;
 
     /*
-     * We first decide whether this OFDM symbol carries a 0 or a 1 regarding the TPS.
+     * We first check whether the TPS carriers of this OFDM symbol carry a 0 or a 1.
+     * We have tps_carriers_size TPS carriers. TPS carriers use majority voting for
+     * decision.
      */
-
-    // We have tps_carriers_size TPS carriers. TPS carriers use majority voting for
-    // decision.
     int tps_majority_zero = 0;
 
     // For every TPS carrier in the symbol...
@@ -120,88 +116,125 @@ bool dvbt_tps_decoder_impl::process_tps_data(const gr_complex* in)
         d_prev_tps_symbol[k] = in[d_tps_carriers[k]];
     }
 
-    // Delete first element (we keep the last 67 bits)
-    d_rcv_tps_data.pop_front();
+    // Insert obtained TPS bit into the FIFO.
+    // Insert a zero into FIFO in the case diff_symbol_index is greater than one. This
+    // will happen in the case of losing 1 to 3 symbols. This could be corrected by BCH
+    // decoder afterwards.
+    for (int i = 0; i < diff_symbol_index; i++) {
+        // Delete first element (we keep the last 67 bits)
+        d_rcv_tps_data.pop_front();
 
-    // Add data to tail
-    if (tps_majority_zero >= 0) {
-        // If most of the symbols voted a zero, we add a zero
-        d_rcv_tps_data.push_back(0);
-    } else {
-        // Otherwise, we add a one
-        d_rcv_tps_data.push_back(1);
-    }
-
-    /*
-     * We now check whether a complete TPS frame has been received. To do this, we first
-     * check whether the beginning of what we have received so far is equal to the 2-Byte
-     * synchronization word. Then we check the BCH parity code at the end. To avoid
-     * unnecesary checking, we assure that have received at least 68 frames since the
-     * precedent complete TPS.
-     */
-    if (d_since_last_tps >= (d_symbols_per_frame - 1)) {
-        if (std::equal(d_rcv_tps_data.begin() + 1,
-                       d_rcv_tps_data.begin() + d_tps_sync_size,
-                       d_tps_sync_evenv.begin()) ||
-            std::equal(d_rcv_tps_data.begin() + 1,
-                       d_rcv_tps_data.begin() + d_tps_sync_size,
-                       d_tps_sync_oddv.begin())) {
-            if (d_pg.verify_bch_code(d_rcv_tps_data) == 0) {
-                // We have received a complete DVB-T frame
-                end_of_frame = true;
-                d_since_last_tps = 0;
-                // Decode the TPS information
-                // Frame number
-                d_tps_info.frame_number = (d_rcv_tps_data[23] << 1) | d_rcv_tps_data[24];
-                // Constellation
-                d_tps_info.constellation = (d_rcv_tps_data[25] << 1) | d_rcv_tps_data[26];
-                // Hierarchy information
-                d_tps_info.hierarchy_info = (d_rcv_tps_data[27] << 2) |
-                                            (d_rcv_tps_data[28] << 1) |
-                                            d_rcv_tps_data[29];
-                // Code rate HP
-                d_tps_info.code_rate_hp = (d_rcv_tps_data[30] << 2) |
-                                          (d_rcv_tps_data[31] << 1) | d_rcv_tps_data[32];
-                // Code rate LP
-                d_tps_info.code_rate_lp = (d_rcv_tps_data[33] << 2) |
-                                          (d_rcv_tps_data[34] << 1) | d_rcv_tps_data[35];
-                // Guard interval
-                d_tps_info.guard_interval =
-                    (d_rcv_tps_data[36] << 1) | d_rcv_tps_data[37];
-                // Transmission mode
-                d_tps_info.trans_mode = (d_rcv_tps_data[38] << 1) | d_rcv_tps_data[39];
-                // Cell ID
-                uint8_t cell_id_high = 0;
-                uint8_t cell_id_low = 0;
-                if (d_tps_info.frame_number % 2) {
-                    // Odd frame
-                    cell_id_high = (d_rcv_tps_data[40] << 7) | (d_rcv_tps_data[41] << 6) |
-                                   (d_rcv_tps_data[42] << 5) | (d_rcv_tps_data[43] << 4) |
-                                   (d_rcv_tps_data[44] << 3) | (d_rcv_tps_data[45] << 2) |
-                                   (d_rcv_tps_data[46] << 1) | (d_rcv_tps_data[47]);
-                    d_tps_info.cell_id = (cell_id_high << 8) | cell_id_low;
-                } else {
-                    // Even frame
-                    cell_id_low = (d_rcv_tps_data[40] << 7) | (d_rcv_tps_data[41] << 6) |
-                                  (d_rcv_tps_data[42] << 5) | (d_rcv_tps_data[43] << 4) |
-                                  (d_rcv_tps_data[44] << 3) | (d_rcv_tps_data[45] << 2) |
-                                  (d_rcv_tps_data[46] << 1) | (d_rcv_tps_data[47]);
-                }
+        // Add data at tail
+        if (!d_symbol_index_known || (d_symbol_index != 0)) {
+            if (tps_majority_zero >= 0) {
+                // If most of the symbols voted a zero, we add a zero
+                d_rcv_tps_data.push_back(0);
             } else {
-                printf("TPS Decoder: process_tps_data(): frame error -> resync!\n");
-                d_sync_start = true;
-                d_resync = true;
-                d_frame_sync = false;
+                // Otherwise, we add a one
+                d_rcv_tps_data.push_back(1);
             }
+        } else {
+            d_rcv_tps_data.push_back(0);
         }
     }
 
-    if (!end_of_frame) {
-        ++d_since_last_tps;
+    /*
+     * We now check whether a complete frame has been received. To do this, we first check
+     * whether the beginning of what we have received so far is equal to the 2-Byte
+     * synchronization word. Then we check the BCH parity code at the end.
+     */
+    if (std::equal(d_rcv_tps_data.begin() + 1,
+                   d_rcv_tps_data.begin() + d_tps_sync_size,
+                   d_tps_sync_evenv.begin())) {
+        // Verify parity for TPS data
+        if (d_pg.verify_bch_code(d_rcv_tps_data) == 0) {
+            // We have received a complete frame
+            d_frame_index = (d_rcv_tps_data[23] << 1) | d_rcv_tps_data[24];
+            d_symbol_index_known = true;
+            end_of_frame = true;
+            decode_tps_data();
+        } else {
+            d_symbol_index_known = false;
+            end_of_frame = false;
+            d_sync_start = true;
+            d_resync = true;
+            d_frame_sync = false;
+            printf("TPS Decoder: process_tps_data(): frame error -> resync!\n");
+        }
+        // Clear up FIFO
+        for (int i = 0; i < d_symbols_per_frame; ++i) {
+            d_rcv_tps_data[i] = 0;
+        }
+    } else if (std::equal(d_rcv_tps_data.begin() + 1,
+                          d_rcv_tps_data.begin() + d_tps_sync_size,
+                          d_tps_sync_oddv.begin())) {
+        // Verify parity for TPS data
+        if (d_pg.verify_bch_code(d_rcv_tps_data) == 0) {
+            // We have received a complete frame
+            d_frame_index = (d_rcv_tps_data[23] << 1) | d_rcv_tps_data[24];
+            d_symbol_index_known = true;
+            end_of_frame = true;
+            decode_tps_data();
+        } else {
+            d_symbol_index_known = false;
+            end_of_frame = false;
+            d_sync_start = true;
+            d_resync = true;
+            d_frame_sync = false;
+            printf("TPS Decoder: process_tps_data(): frame error -> resync!\n");
+        }
+        // Clear up FIFO
+        for (int i = 0; i < d_symbols_per_frame; ++i) {
+            d_rcv_tps_data[i] = 0;
+        }
     }
 
     // We return end_of_frame
     return end_of_frame;
+}
+
+void dvbt_tps_decoder_impl::decode_tps_data()
+{
+    static tps_info_t tps_info{};
+
+    // Frame number
+    tps_info.frame_index = (d_rcv_tps_data[23] << 1) | d_rcv_tps_data[24];
+    // Constellation
+    tps_info.constellation = (d_rcv_tps_data[25] << 1) | d_rcv_tps_data[26];
+    // Hierarchy information
+    tps_info.hierarchy_info =
+        (d_rcv_tps_data[27] << 2) | (d_rcv_tps_data[28] << 1) | d_rcv_tps_data[29];
+    // Code rate HP
+    tps_info.code_rate_hp =
+        (d_rcv_tps_data[30] << 2) | (d_rcv_tps_data[31] << 1) | d_rcv_tps_data[32];
+    // Code rate LP
+    tps_info.code_rate_lp =
+        (d_rcv_tps_data[33] << 2) | (d_rcv_tps_data[34] << 1) | d_rcv_tps_data[35];
+    // Guard interval
+    tps_info.guard_interval = (d_rcv_tps_data[36] << 1) | d_rcv_tps_data[37];
+    // Transmission mode
+    tps_info.trans_mode = (d_rcv_tps_data[38] << 1) | d_rcv_tps_data[39];
+    // Cell ID
+    uint8_t cell_id = 0;
+    if (tps_info.frame_index % 2) {
+        // Odd frame (1 or 3)
+        cell_id = (d_rcv_tps_data[40] << 7) | (d_rcv_tps_data[41] << 6) |
+                  (d_rcv_tps_data[42] << 5) | (d_rcv_tps_data[43] << 4) |
+                  (d_rcv_tps_data[44] << 3) | (d_rcv_tps_data[45] << 2) |
+                  (d_rcv_tps_data[46] << 1) | (d_rcv_tps_data[47]);
+        tps_info.cell_id &= 0x00ff;
+        tps_info.cell_id |= cell_id << 8;
+        d_tps_info = tps_info;
+        d_tps_complete = true;
+    } else {
+        // Even frame (0 or 2)
+        cell_id = (d_rcv_tps_data[40] << 7) | (d_rcv_tps_data[41] << 6) |
+                  (d_rcv_tps_data[42] << 5) | (d_rcv_tps_data[43] << 4) |
+                  (d_rcv_tps_data[44] << 3) | (d_rcv_tps_data[45] << 2) |
+                  (d_rcv_tps_data[46] << 1) | (d_rcv_tps_data[47]);
+        tps_info.cell_id = cell_id;
+        d_tps_complete = false;
+    }
 }
 
 void dvbt_tps_decoder_impl::print_coderate(coderate_t coderate)
@@ -357,14 +390,16 @@ dvbt_tps_decoder_impl::dvbt_tps_decoder_impl(dvbt_transmission_mode_t transmissi
       d_symbols_per_frame{ d_config.d_symbols_per_frame },
       d_frames_per_superframe{ d_config.d_frames_per_superframe },
       d_prev_tps_symbol(d_num_tps_carriers),
-      d_frame_end{false},
+      d_frame_end{ false },
       d_resync{ false },
       d_rel_symbol_index{ 0 },
       d_prev_rel_symbol_index{ 0 },
       d_symbol_index{ 0 },
       d_prev_symbol_index{ 0 },
+      d_symbol_index_known{ false },
       d_frame_index{ 0 },
       d_prev_frame_index{ 0 },
+      d_tps_complete{ false },
       d_data_carriers(4 * d_num_data_carriers),
       d_sync_start{ false },
       d_frame_sync{ false },
@@ -379,8 +414,6 @@ dvbt_tps_decoder_impl::dvbt_tps_decoder_impl(dvbt_transmission_mode_t transmissi
     create_data_carrier_list();
 
     d_print_tps_data = print_tps_data;
-    // d_tps_info.frame_number = 0xff;
-    // d_prev_tps_info.frame_number = 0xff;
 
     memset(static_cast<void*>(&d_prev_tps_symbol[0]),
            0,
@@ -393,9 +426,9 @@ dvbt_tps_decoder_impl::dvbt_tps_decoder_impl(dvbt_transmission_mode_t transmissi
     }
 
     // Init receive TPS data vector
-    for (int i = 0; i < d_symbols_per_frame; ++i)
+    for (int i = 0; i < d_symbols_per_frame; ++i) {
         d_rcv_tps_data.push_back(0);
-    d_since_last_tps = 0;
+    }
 
     // Register message ports
     message_port_register_out(d_mp_mod_scheme);
@@ -443,7 +476,7 @@ int dvbt_tps_decoder_impl::general_work(int noutput_items,
         }
 
         // We check if the block upstream signaled us to re-sync, e.g. because one
-        // or more symbols have been lost. If so, this is also signaled downstream.
+        // or more symbols have been lost.
         this->get_tags_in_window(tags, 0, i, i + 1, pmt::string_to_symbol("resync"));
         if (!tags.empty()) {
             if (!d_resync) {
@@ -454,25 +487,42 @@ int dvbt_tps_decoder_impl::general_work(int noutput_items,
             }
         }
 
+        // We obtain the relative symbol index (between 0 and 3) from the block upstream
+        this->get_tags_in_window(
+            tags, 0, i, i + 1, pmt::string_to_symbol("relative_symbol_index"));
+        if (!tags.empty()) {
+            d_rel_symbol_index = pmt::to_long(tags[0].value);
+        } else {
+            printf("TPS decoder: No relative symbol index found in the tag stream.\n");
+        }
+        int diff_rel_symbol_index =
+            (d_rel_symbol_index - d_prev_rel_symbol_index + 4) % 4;
+        d_prev_rel_symbol_index = d_rel_symbol_index;
+        if (diff_rel_symbol_index != 1) {
+            if (!(d_sync_start | d_resync)) {
+                printf("TPS decoder: One or more symbols lost.\n");
+            }
+        }
+
         if (d_frame_end) {
-            // Being here means that the previous OFDM symbol constituted the end of a
-            // frame.
-            d_frame_index = (d_tps_info.frame_number + 1) % d_frames_per_superframe;
-            d_rel_symbol_index = 0;
+            // Being here means that the previous OFDM symbol constituted the
+            // end of a frame. The current symbol belongs to the next frame!
+            d_frame_index = (d_frame_index + 1) % d_frames_per_superframe;
             d_symbol_index = 0;
             d_frame_sync = true;
         } else {
-            d_rel_symbol_index = (d_rel_symbol_index + 1) % 4;
             d_symbol_index = (d_symbol_index + 1) % d_symbols_per_frame;
         }
 
-        d_frame_end = process_tps_data(&in[i * d_num_carriers]);
+        // Process and decode the TPS data
+        d_frame_end = process_tps_data(&in[i * d_num_carriers], diff_rel_symbol_index);
 
         if (d_sync_start || d_resync) {
-        // if (d_resync) {
-        // if (d_sync_start) {
+            // if (d_resync) {
+            // if (d_sync_start) {
             //  If sync_start or  resync have been signaled, wait for the next superframe.
-            if (d_frame_sync && d_symbol_index == 0 && d_frame_index == 0) {
+            //if (d_frame_sync && d_symbol_index == 0 && d_frame_index == 0 && d_tps_complete) {
+            if (d_symbol_index == 0 && d_frame_index == 0 && d_tps_complete) {
                 // This is a superframe start, we signal it downstream.
                 d_sync_start = false;
                 d_resync = false;
@@ -504,16 +554,6 @@ int dvbt_tps_decoder_impl::general_work(int noutput_items,
                 return (0);      // Nothing has been produced
             }
         }
-
-        // Currently, we obtain the relative symbol index (between 0 and 3) from the block
-        // upstream
-        // this->get_tags_in_window(
-        //     tags, 0, i, i + 1, pmt::string_to_symbol("relative_symbol_index"));
-        // if (!tags.empty()) {
-        //     d_rel_symbol_index = pmt::to_long(tags[0].value);
-        // } else {
-        //     printf("TPS decoder: No relative symbol index found in the tag stream.\n");
-        // }
 
         // Send a tag for each OFDM symbol informing about the symbol index.
         const uint64_t offset = this->nitems_written(0) + i;

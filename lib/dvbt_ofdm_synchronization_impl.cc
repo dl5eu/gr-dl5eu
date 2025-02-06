@@ -239,7 +239,7 @@ int dvbt_ofdm_synchronization_impl::estimate_symbol_index(const gr_complex* in)
     /*************************************************************/
     float max = 0;
     gr_complex sum = 0;
-    int current_symbol = 0;
+    int symbol_index = 0;
 
     int current_sp_carrier; // The current SP carrier
     // sym_count (Symbol count) can take values from 0 to 3, according to the positions of
@@ -271,10 +271,10 @@ int dvbt_ofdm_synchronization_impl::estimate_symbol_index(const gr_complex* in)
         if (abs(sum) > max) {
             // When sum is maximum sym_count contains the current symbol (0, 1, 2 or 3)
             max = abs(sum);
-            current_symbol = sym_count;
+            symbol_index = sym_count;
         }
     }
-    return current_symbol;
+    return symbol_index;
 }
 
 void dvbt_ofdm_synchronization_impl::generate_prbs()
