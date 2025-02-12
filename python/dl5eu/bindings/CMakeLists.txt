@@ -26,7 +26,9 @@ include(GrPybind)
 
 list(APPEND dl5eu_python_files
     dvbt_ofdm_synchronization_python.cc
-    dvbt_tps_decoder_python.cc python_bindings.cc)
+    dvbt_tps_decoder_python.cc
+    dvbt_viterbi_decoder_python.cc
+    dvbt_convolutional_deinterleaver_python.cc python_bindings.cc)
 
 gr_pybind_make_oot(dl5eu ../../.. gr::dl5eu "${dl5eu_python_files}")
 

@@ -404,7 +404,6 @@ dvbt_tps_decoder_impl::dvbt_tps_decoder_impl(dvbt_transmission_mode_t transmissi
       d_sync_start{ false },
       d_frame_sync{ false },
       d_tps_info{},
-      d_prev_tps_info{},
       // Message ports
       d_mp_mod_scheme{ pmt::intern("const") },
       d_mp_trans_mode{ pmt::intern("mode") },
@@ -435,6 +434,10 @@ dvbt_tps_decoder_impl::dvbt_tps_decoder_impl(dvbt_transmission_mode_t transmissi
     message_port_register_out(d_mp_trans_mode);
     message_port_register_out(d_mp_code_rate);
     message_port_register_out(d_mp_guard_int);
+
+    // No tag propagation in this block. Tags that are needed
+    // by the blocks downstream are generated in this block.
+    // set_tag_propagation_policy(TPP_DONT);
 }
 
 /*
@@ -470,7 +473,8 @@ int dvbt_tps_decoder_impl::general_work(int noutput_items,
             if (!d_sync_start) {
                 d_sync_start = true;
                 d_frame_sync = false;
-                printf("TPS decoder: sync_start received from %s\n",
+                printf("TPS decoder: %s received from %s\n",
+                       pmt::symbol_to_string(tags[0].key).c_str(),
                        pmt::symbol_to_string(tags[0].srcid).c_str());
             }
         }
@@ -482,7 +486,8 @@ int dvbt_tps_decoder_impl::general_work(int noutput_items,
             if (!d_resync) {
                 d_resync = true;
                 d_frame_sync = false;
-                printf("TPS decoder: resync received from %s\n",
+                printf("TPS decoder: %s received from %s\n",
+                       pmt::symbol_to_string(tags[0].key).c_str(),
                        pmt::symbol_to_string(tags[0].srcid).c_str());
             }
         }
@@ -517,17 +522,17 @@ int dvbt_tps_decoder_impl::general_work(int noutput_items,
         // Process and decode the TPS data
         d_frame_end = process_tps_data(&in[i * d_num_carriers], diff_rel_symbol_index);
 
-        // if (d_sync_start || d_resync) {
-        if (d_sync_start) {
+        if (d_sync_start || d_resync) {
+            // if (d_sync_start) {
             // if (d_resync) {
-            //  If sync_start or  resync have been signaled, wait for the next superframe.
-            //if (d_frame_sync && d_symbol_index == 0 && d_frame_index == 0 && d_tps_complete) {
+            // If sync_start or resync have been signaled, wait for the next superframe.
+            // if (d_frame_sync && d_symbol_index == 0 && d_frame_index == 0 &&
+            // d_tps_complete) {
             if (d_symbol_index == 0 && d_frame_index == 0 && d_tps_complete) {
                 // This is a superframe start, we signal it downstream.
                 d_sync_start = false;
                 d_resync = false;
                 // Send TPS information
-                d_prev_tps_info = d_tps_info;
                 message_port_pub(
                     d_mp_mod_scheme,
                     pmt::cons(pmt::PMT_NIL, pmt::from_long(d_tps_info.constellation)));
@@ -548,7 +553,8 @@ int dvbt_tps_decoder_impl::general_work(int noutput_items,
                 pmt::pmt_t value = pmt::from_long(0xaa);
                 pmt::pmt_t srcid = pmt::string_to_symbol(blockid);
                 this->add_item_tag(0, offset, key, value, srcid);
-                printf("TPS decoder: Superframe start sent\n");
+                printf("TPS decoder: Superframe start sent at offset %llu\n",
+                       offset * d_num_carriers);
             } else {
                 consume_each(1); // Consume the input
                 return (0);      // Nothing has been produced

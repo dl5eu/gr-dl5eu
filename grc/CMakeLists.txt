@@ -8,4 +8,6 @@
 
 install(FILES
     dl5eu_dvbt_ofdm_synchronization.block.yml
-    dl5eu_dvbt_tps_decoder.block.yml DESTINATION share/gnuradio/grc/blocks)
+    dl5eu_dvbt_tps_decoder.block.yml
+    dl5eu_dvbt_viterbi_decoder.block.yml
+    dl5eu_dvbt_convolutional_deinterleaver.block.yml DESTINATION share/gnuradio/grc/blocks)

@@ -1,0 +1,38 @@
+id: dl5eu_dvbt_convolutional_deinterleaver
+label: DL5EU Convolutional Deinterleaver
+category: '[dl5eu]'
+
+templates:
+  imports: from gnuradio import dl5eu
+  make: dl5eu.dvbt_convolutional_deinterleaver(${blocks}, ${I}, ${M})
+
+parameters:
+-   id: blocks
+    label: Blocks (12 Bytes)
+    dtype: int
+    default: '136'
+-   id: I
+    label: Number of Shift registers
+    dtype: int
+    default: '12'
+-   id: M
+    label: Depth of shift registers
+    dtype: int
+    default: '17'
+
+inputs:
+-   domain: stream
+    dtype: byte
+    vlen: 1
+
+outputs:
+-   domain: stream
+    dtype: byte
+    vlen: ${ blocks*I }
+
+asserts:
+- ${ blocks > 0 }
+- ${ I > 0 }
+- ${ M > 0 }
+
+file_format: 1

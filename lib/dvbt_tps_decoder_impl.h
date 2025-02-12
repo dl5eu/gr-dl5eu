@@ -132,7 +132,6 @@ private:
     bool d_frame_sync;
 
     tps_info_t d_tps_info;
-    tps_info_t d_prev_tps_info;
 
     // Ports for message passing
     pmt::pmt_t d_mp_mod_scheme;
