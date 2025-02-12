@@ -249,6 +249,44 @@ blocks:
     coordinate: [1064, 108.0]
     rotation: 0
     state: enabled
+- name: blocks_tag_debug_0
+  id: blocks_tag_debug
+  parameters:
+    affinity: ''
+    alias: ''
+    comment: ''
+    display: 'True'
+    filter: '"superframe_start"'
+    name: Superframe before Viterbi Decoder
+    num_inputs: '1'
+    type: byte
+    vlen: '1'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [1336, 108.0]
+    rotation: 0
+    state: enabled
+- name: blocks_tag_debug_0_0
+  id: blocks_tag_debug
+  parameters:
+    affinity: ''
+    alias: ''
+    comment: ''
+    display: 'True'
+    filter: '"superframe_start"'
+    name: Superframe after Viterbi Decoder
+    num_inputs: '1'
+    type: byte
+    vlen: '1'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [1336, 188.0]
+    rotation: 0
+    state: enabled
 - name: blocks_vector_to_stream_0
   id: blocks_vector_to_stream
   parameters:
@@ -303,6 +341,24 @@ blocks:
     coordinate: [1104, 56.0]
     rotation: 180
     state: disabled
+- name: dl5eu_dvbt_convolutional_deinterleaver_0
+  id: dl5eu_dvbt_convolutional_deinterleaver
+  parameters:
+    I: '12'
+    M: '17'
+    affinity: ''
+    alias: ''
+    blocks: '136'
+    comment: ''
+    maxoutbuf: '0'
+    minoutbuf: '0'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [560, 460.0]
+    rotation: 0
+    state: enabled
 - name: dl5eu_dvbt_ofdm_synchronization_0
   id: dl5eu_dvbt_ofdm_synchronization
   parameters:
@@ -340,6 +396,26 @@ blocks:
     coordinate: [1064, 172.0]
     rotation: 0
     state: enabled
+- name: dl5eu_dvbt_viterbi_decoder_0
+  id: dl5eu_dvbt_viterbi_decoder
+  parameters:
+    affinity: ''
+    alias: ''
+    block_size: '768'
+    code_rate: C3_4
+    comment: ''
+    constellation: qpsk
+    hierarchy: nh
+    maxoutbuf: '0'
+    minoutbuf: '0'
+    type: b
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [296, 452.0]
+    rotation: 0
+    state: enabled
 - name: dtv_dvbt_bit_inner_deinterleaver_0
   id: dtv_dvbt_bit_inner_deinterleaver
   parameters:
@@ -373,9 +449,9 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [624, 460.0]
+    coordinate: [1096, 644.0]
     rotation: 0
-    state: true
+    state: disabled
 - name: dtv_dvbt_demap_0
   id: dtv_dvbt_demap
   parameters:
@@ -468,9 +544,9 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [360, 452.0]
+    coordinate: [64, 660.0]
     rotation: 0
-    state: true
+    state: disabled
 - name: freq_error
   id: qtgui_number_sink
   parameters:
@@ -1073,7 +1149,7 @@ blocks:
     tr_slope: qtgui.TRIG_SLOPE_POS
     tr_tag: '""'
     type: complex
-    update_time: '0.10'
+    update_time: '0.1'
     width1: '1'
     width10: '1'
     width2: '1'
@@ -1161,8 +1237,11 @@ blocks:
 
 connections:
 - [blocks_vector_to_stream_0, '0', qtgui_const_sink_x_0_0, '0']
+- [blocks_vector_to_stream_1, '0', blocks_tag_debug_0, '0']
+- [blocks_vector_to_stream_1, '0', dl5eu_dvbt_viterbi_decoder_0, '0']
 - [blocks_vector_to_stream_1, '0', dtv_dvbt_viterbi_decoder_0, '0']
 - [blocks_vector_to_stream_2_0, '0', qtgui_const_sink_x_0, '0']
+- [dl5eu_dvbt_convolutional_deinterleaver_0, '0', dtv_dvbt_reed_solomon_dec_0, '0']
 - [dl5eu_dvbt_ofdm_synchronization_0, '0', blocks_vector_to_stream_0, '0']
 - [dl5eu_dvbt_ofdm_synchronization_0, '0', dl5eu_dvbt_tps_decoder_0, '0']
 - [dl5eu_dvbt_ofdm_synchronization_0, '1', blocks_null_sink_0_0, '0']
@@ -1170,12 +1249,16 @@ connections:
 - [dl5eu_dvbt_ofdm_synchronization_0, '3', samp_error, '0']
 - [dl5eu_dvbt_tps_decoder_0, '0', blocks_vector_to_stream_2_0, '0']
 - [dl5eu_dvbt_tps_decoder_0, '0', dtv_dvbt_demap_0, '0']
+- [dl5eu_dvbt_viterbi_decoder_0, '0', blocks_tag_debug_0_0, '0']
+- [dl5eu_dvbt_viterbi_decoder_0, '0', dl5eu_dvbt_convolutional_deinterleaver_0, '0']
+- [dl5eu_dvbt_viterbi_decoder_0, '0', dtv_dvbt_convolutional_deinterleaver_0, '0']
 - [dtv_dvbt_bit_inner_deinterleaver_0, '0', blocks_vector_to_stream_1, '0']
 - [dtv_dvbt_convolutional_deinterleaver_0, '0', dtv_dvbt_reed_solomon_dec_0, '0']
 - [dtv_dvbt_demap_0, '0', dtv_dvbt_symbol_inner_interleaver_0, '0']
 - [dtv_dvbt_energy_descramble_0, '0', network_udp_sink_0, '0']
 - [dtv_dvbt_reed_solomon_dec_0, '0', dtv_dvbt_energy_descramble_0, '0']
 - [dtv_dvbt_symbol_inner_interleaver_0, '0', dtv_dvbt_bit_inner_deinterleaver_0, '0']
+- [dtv_dvbt_viterbi_decoder_0, '0', blocks_tag_debug_0_0, '0']
 - [dtv_dvbt_viterbi_decoder_0, '0', dtv_dvbt_convolutional_deinterleaver_0, '0']
 - [osmosdr_source_0, '0', dl5eu_dvbt_ofdm_synchronization_0, '0']
 
