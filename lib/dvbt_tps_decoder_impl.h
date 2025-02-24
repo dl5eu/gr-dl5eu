@@ -129,10 +129,8 @@ private:
     volk::vector<int> d_data_carriers;
 
     bool d_sync_start;
-    bool d_frame_sync;
 
     tps_info_t d_tps_info;
-    tps_info_t d_prev_tps_info;
 
     // Ports for message passing
     pmt::pmt_t d_mp_mod_scheme;

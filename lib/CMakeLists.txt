@@ -15,7 +15,8 @@ list(APPEND dl5eu_sources
     dvbt_configure.cc
     dvbt_ofdm_synchronization_impl.cc
     dvbt_pilot_gen.cc
-    dvbt_tps_decoder_impl.cc)
+    dvbt_tps_decoder_impl.cc
+    dvbt_viterbi_decoder_impl.cc)
 
 set(dl5eu_sources
     "${dl5eu_sources}"

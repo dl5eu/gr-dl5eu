@@ -11,4 +11,5 @@
 ########################################################################
 install(FILES api.h
     dvbt_ofdm_synchronization.h
-    dvbt_tps_decoder.h DESTINATION include/gnuradio/dl5eu)
+    dvbt_tps_decoder.h
+    dvbt_viterbi_decoder.h DESTINATION include/gnuradio/dl5eu)
