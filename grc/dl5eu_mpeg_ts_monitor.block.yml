@@ -1,0 +1,49 @@
+id: dl5eu_mpeg_ts_monitor
+label: MPEG-TS Monitor
+category: '[dl5eu]'
+
+templates:
+  imports: from gnuradio import dl5eu
+  make: dl5eu.mpeg_ts_monitor(${log_interval_ms}, ${log_filename}, ${console_events}, ${console_statistics})
+
+parameters:
+- id: log_interval_ms
+  label: Log Interval (ms)
+  dtype: int
+  default: '5000'
+- id: log_filename
+  label: CSV Log Filename (empty disables)
+  dtype: string
+  default: "''"
+- id: console_events
+  label: Print Individual Events To Console
+  dtype: bool
+  default: 'False'
+- id: console_statistics
+  label: Print Statistics To Console
+  dtype: bool
+  default: 'False'
+
+inputs:
+- label: in
+  domain: stream
+  dtype: byte
+
+outputs:
+- label: out
+  domain: stream
+  dtype: byte
+
+documentation: |-
+  Transparent MPEG-TS byte-stream monitor for 188-byte transport packets.
+  Place after Vector to Stream if the decoder produces 188-byte vectors.
+  Inspects TS alignment, transport_error_indicator, adaptation fields and
+  PID-specific continuity counters. Bytes and stream tags pass through unchanged.
+  The block reports packet rate and errors periodically, even if the input stalls.
+  Optional CSV records local wall-clock timestamps and absolute input byte offsets.
+  Individual TS events and periodic statistics are always written to the CSV
+  if enabled. Their console outputs can be enabled separately; both are
+  disabled by default to reduce overhead.
+  The CSV file is overwritten when a new flowgraph starts.
+
+file_format: 1

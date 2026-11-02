@@ -43,7 +43,7 @@ blocks:
     orient: QtCore.Qt.Horizontal
     rangeType: int
     start: '430000000'
-    step: '1000'
+    step: '100'
     stop: '440000000'
     value: conf_center_freq
     widget: counter
@@ -192,7 +192,7 @@ blocks:
     rangeType: int
     start: '0'
     step: '1'
-    stop: '42'
+    stop: '73'
     value: conf_rf_gain_db
     widget: counter
   states:
@@ -266,6 +266,24 @@ blocks:
     bus_structure: null
     coordinate: [1064, 264.0]
     rotation: 0
+    state: disabled
+- name: blocks_vector_to_stream_0_0
+  id: blocks_vector_to_stream
+  parameters:
+    affinity: ''
+    alias: ''
+    comment: ''
+    maxoutbuf: '0'
+    minoutbuf: '0'
+    num_items: '1512'
+    type: complex
+    vlen: '1'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [1312, 360.0]
+    rotation: 0
     state: enabled
 - name: blocks_vector_to_stream_1
   id: blocks_vector_to_stream
@@ -309,10 +327,11 @@ blocks:
     affinity: ''
     alias: ''
     comment: ''
-    guard_interval: GI_1_4
+    guard_interval: GI_1_32
     interpolate: 'True'
     maxoutbuf: '0'
     minoutbuf: '0'
+    sample_rate: 8e6/7
     snr: '10'
     transmission_mode: T2k
   states:
@@ -346,7 +365,7 @@ blocks:
     affinity: ''
     alias: ''
     comment: ''
-    constellation: qpsk
+    constellation: 16qam
     hierarchy: nh
     maxoutbuf: '0'
     minoutbuf: '0'
@@ -382,7 +401,7 @@ blocks:
     affinity: ''
     alias: ''
     comment: ''
-    constellation: qpsk
+    constellation: 16qam
     gain: '1'
     hierarchy: nh
     maxoutbuf: '0'
@@ -457,9 +476,9 @@ blocks:
     affinity: ''
     alias: ''
     block_size: '768'
-    code_rate: C3_4
+    code_rate: C2_3
     comment: ''
-    constellation: qpsk
+    constellation: 16qam
     hierarchy: nh
     maxoutbuf: '0'
     minoutbuf: '0'
@@ -501,7 +520,7 @@ blocks:
     factor9: '1'
     graph_type: qtgui.NUM_GRAPH_HORIZ
     gui_hint: 5,0,1,2
-    label1: Freq. error
+    label1: Freq. error (Hz)
     label10: ''
     label2: ''
     label3: ''
@@ -511,8 +530,8 @@ blocks:
     label7: ''
     label8: ''
     label9: ''
-    max: '10'
-    min: '-10'
+    max: 1e5
+    min: -1e5
     name: ''
     nconnections: '1'
     type: float
@@ -533,6 +552,37 @@ blocks:
     bus_structure: null
     coordinate: [800, 132.0]
     rotation: 0
+    state: enabled
+- name: iio_pluto_source_0
+  id: iio_pluto_source
+  parameters:
+    affinity: ''
+    alias: ''
+    bandwidth: '20000000'
+    bbdc: 'True'
+    buffer_size: '32768'
+    comment: ''
+    filter: ''
+    filter_source: '''Auto'''
+    fpass: '0'
+    frequency: center_freq
+    fstop: '0'
+    gain1: '''manual'''
+    len_tag_key: packet_len
+    manual_gain1: rf_gain_db
+    maxoutbuf: '0'
+    minoutbuf: '0'
+    quadrature: 'True'
+    rfdc: 'True'
+    samplerate: '1142857'
+    type: fc32
+    uri: ''
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [1120, 532.0]
+    rotation: 180
     state: enabled
 - name: network_udp_sink_0
   id: network_udp_sink
@@ -793,7 +843,7 @@ blocks:
     gain7: '10'
     gain8: '10'
     gain9: '10'
-    gain_mode0: 'True'
+    gain_mode0: 'False'
     gain_mode1: 'False'
     gain_mode10: 'False'
     gain_mode11: 'False'
@@ -910,7 +960,7 @@ blocks:
     bus_structure: null
     coordinate: [72, 172.0]
     rotation: 0
-    state: enabled
+    state: disabled
 - name: qtgui_const_sink_x_0
   id: qtgui_const_sink_x
   parameters:
@@ -1095,6 +1145,87 @@ blocks:
     coordinate: [1336, 244.0]
     rotation: 0
     state: enabled
+- name: qtgui_freq_sink_x_0
+  id: qtgui_freq_sink_x
+  parameters:
+    affinity: ''
+    alias: ''
+    alpha1: '1.0'
+    alpha10: '1.0'
+    alpha2: '1.0'
+    alpha3: '1.0'
+    alpha4: '1.0'
+    alpha5: '1.0'
+    alpha6: '1.0'
+    alpha7: '1.0'
+    alpha8: '1.0'
+    alpha9: '1.0'
+    autoscale: 'False'
+    average: '1.0'
+    axislabels: 'True'
+    bw: samp_rate
+    color1: '"blue"'
+    color10: '"dark blue"'
+    color2: '"red"'
+    color3: '"green"'
+    color4: '"black"'
+    color5: '"cyan"'
+    color6: '"magenta"'
+    color7: '"yellow"'
+    color8: '"dark red"'
+    color9: '"dark green"'
+    comment: ''
+    ctrlpanel: 'False'
+    fc: '0'
+    fftsize: '2048'
+    freqhalf: 'True'
+    grid: 'False'
+    gui_hint: ''
+    label: Relative Gain
+    label1: ''
+    label10: ''''''
+    label2: ''''''
+    label3: ''''''
+    label4: ''''''
+    label5: ''''''
+    label6: ''''''
+    label7: ''''''
+    label8: ''''''
+    label9: ''''''
+    legend: 'True'
+    maxoutbuf: '0'
+    minoutbuf: '0'
+    name: '"Spectrum"'
+    nconnections: '1'
+    norm_window: 'False'
+    showports: 'False'
+    tr_chan: '0'
+    tr_level: '0.0'
+    tr_mode: qtgui.TRIG_MODE_FREE
+    tr_tag: '""'
+    type: complex
+    units: dB
+    update_time: '0.10'
+    width1: '1'
+    width10: '1'
+    width2: '1'
+    width3: '1'
+    width4: '1'
+    width5: '1'
+    width6: '1'
+    width7: '1'
+    width8: '1'
+    width9: '1'
+    wintype: window.WIN_BLACKMAN_hARRIS
+    ymax: '10'
+    ymin: '-140'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [1336, 108.0]
+    rotation: 0
+    state: enabled
 - name: samp_error
   id: qtgui_number_sink
   parameters:
@@ -1113,7 +1244,7 @@ blocks:
     color8: ("black", "black")
     color9: ("black", "black")
     comment: ''
-    factor1: 1e4
+    factor1: '1'
     factor10: '1'
     factor2: '1'
     factor3: '1'
@@ -1125,7 +1256,7 @@ blocks:
     factor9: '1'
     graph_type: qtgui.NUM_GRAPH_HORIZ
     gui_hint: 6,0,1,2
-    label1: Samp. error
+    label1: Samp. error (ppm)
     label10: ''
     label2: ''
     label3: ''
@@ -1135,8 +1266,8 @@ blocks:
     label7: ''
     label8: ''
     label9: ''
-    max: '2'
-    min: '-2'
+    max: '100'
+    min: '-100'
     name: ''
     nconnections: '1'
     type: float
@@ -1158,9 +1289,32 @@ blocks:
     coordinate: [800, 236.0]
     rotation: 0
     state: enabled
+- name: soapy_plutosdr_source_0
+  id: soapy_plutosdr_source
+  parameters:
+    affinity: ''
+    agc: 'False'
+    alias: ''
+    bandwidth: '1000000'
+    center_freq: center_freq
+    comment: ''
+    dev_args: ''
+    gain: rf_gain_db
+    maxoutbuf: '0'
+    minoutbuf: '0'
+    samp_rate: samp_rate
+    type: fc32
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [1352, 620.0]
+    rotation: 180
+    state: disabled
 
 connections:
 - [blocks_vector_to_stream_0, '0', qtgui_const_sink_x_0_0, '0']
+- [blocks_vector_to_stream_0_0, '0', qtgui_const_sink_x_0_0, '0']
 - [blocks_vector_to_stream_1, '0', dtv_dvbt_viterbi_decoder_0, '0']
 - [blocks_vector_to_stream_2_0, '0', qtgui_const_sink_x_0, '0']
 - [dl5eu_dvbt_ofdm_synchronization_0, '0', blocks_vector_to_stream_0, '0']
@@ -1168,6 +1322,7 @@ connections:
 - [dl5eu_dvbt_ofdm_synchronization_0, '1', blocks_null_sink_0_0, '0']
 - [dl5eu_dvbt_ofdm_synchronization_0, '2', freq_error, '0']
 - [dl5eu_dvbt_ofdm_synchronization_0, '3', samp_error, '0']
+- [dl5eu_dvbt_tps_decoder_0, '0', blocks_vector_to_stream_0_0, '0']
 - [dl5eu_dvbt_tps_decoder_0, '0', blocks_vector_to_stream_2_0, '0']
 - [dl5eu_dvbt_tps_decoder_0, '0', dtv_dvbt_demap_0, '0']
 - [dtv_dvbt_bit_inner_deinterleaver_0, '0', blocks_vector_to_stream_1, '0']
@@ -1177,8 +1332,13 @@ connections:
 - [dtv_dvbt_reed_solomon_dec_0, '0', dtv_dvbt_energy_descramble_0, '0']
 - [dtv_dvbt_symbol_inner_interleaver_0, '0', dtv_dvbt_bit_inner_deinterleaver_0, '0']
 - [dtv_dvbt_viterbi_decoder_0, '0', dtv_dvbt_convolutional_deinterleaver_0, '0']
+- [iio_pluto_source_0, '0', dl5eu_dvbt_ofdm_synchronization_0, '0']
+- [iio_pluto_source_0, '0', qtgui_freq_sink_x_0, '0']
 - [osmosdr_source_0, '0', dl5eu_dvbt_ofdm_synchronization_0, '0']
+- [osmosdr_source_0, '0', qtgui_freq_sink_x_0, '0']
+- [soapy_plutosdr_source_0, '0', dl5eu_dvbt_ofdm_synchronization_0, '0']
+- [soapy_plutosdr_source_0, '0', qtgui_freq_sink_x_0, '0']
 
 metadata:
   file_format: 1
-  grc_version: 3.10.10.0
+  grc_version: 3.10.12.0

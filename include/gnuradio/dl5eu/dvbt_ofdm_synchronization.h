@@ -37,11 +37,23 @@ public:
      * \param guard_interval the guard interval (1/32, 1/16, 1/8 or 1/4). \n
      * \param snr the SNR (default = 10.0). \n
      * \param interpolate whether interpolation is used or not. \n
+     * \param sample_rate nominal complex input sample rate after resampling, in Hz. \n
+     * \param squelch_db digital IQ power threshold (dBFS), or -200 to disable. \n
+     * \param diagnostics enable verbose synchronization diagnostics. \n
      */
     static sptr make(dvbt_transmission_mode_t transmission_mode,
                      dvb_guardinterval_t guard_interval,
                      float snr,
-                     bool interpolate);
+                     bool interpolate,
+                     double sample_rate = 8.0e6 / 7.0,
+                     float squelch_db = -60.0f,
+                     bool diagnostics = false);
+
+    virtual void set_sample_rate(double sample_rate) = 0;
+    virtual double get_sample_rate() const = 0;
+
+    virtual void set_squelch_threshold(float threshold_db) = 0;
+    virtual float get_squelch_threshold() const = 0;
 };
 
 } // namespace dl5eu

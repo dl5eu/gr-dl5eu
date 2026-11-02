@@ -14,6 +14,8 @@
 
 #include "dvbt_tps_decoder_impl.h"
 #include <gnuradio/io_signature.h>
+#include <cstdio>
+#include <cinttypes>
 
 namespace gr {
 namespace dl5eu {
@@ -21,6 +23,11 @@ namespace dl5eu {
 static const char* blockid = "dvbt_tps_decoder";
 
 namespace {
+/*!
+ * @brief Return the number of active carriers, including pilots and TPS.
+ * @param transmission_mode Configured 2K or 8K FFT mode (fallback: 2K).
+ * @return Complex samples per corresponding stream vector item.
+ */
 int get_num_carriers(dvbt_transmission_mode_t transmission_mode)
 {
     int num_carriers = 0;
@@ -37,6 +44,11 @@ int get_num_carriers(dvbt_transmission_mode_t transmission_mode)
 
     return num_carriers;
 }
+/*!
+ * @brief Return the number of payload carriers after removing pilots and TPS.
+ * @param transmission_mode Configured 2K or 8K FFT mode (fallback: 2K).
+ * @return Complex samples per corresponding stream vector item.
+ */
 int get_num_payload_carriers(dvbt_transmission_mode_t transmission_mode)
 {
     int num_carriers = 0;
@@ -116,83 +128,131 @@ bool dvbt_tps_decoder_impl::process_tps_data(const gr_complex* in,
         d_prev_tps_symbol[k] = in[d_tps_carriers[k]];
     }
 
-    // Insert obtained TPS bit into the FIFO.
-    // Insert a zero into FIFO in the case diff_symbol_index is greater than one. This
-    // will happen in the case of losing 1 to 3 symbols. This could be corrected by BCH
-    // decoder afterwards.
+    // Preserve TPS bit spacing when pilot phase indicates missing positions.
+    // Zero placeholders do not recover missing data: the BCH helper only checks
+    // parity here. A symbol discontinuity is handled by the resync path.
+    // Symbol zero is the DBPSK reference and carries no differential TPS data.
     for (int i = 0; i < diff_symbol_index; i++) {
         // Delete first element (we keep the last 67 bits)
         d_rcv_tps_data.pop_front();
 
         // Add data at tail
-        if (!d_symbol_index_known || (d_symbol_index != 0)) {
-            if (tps_majority_zero >= 0) {
-                // If most of the symbols voted a zero, we add a zero
-                d_rcv_tps_data.push_back(0);
-            } else {
-                // Otherwise, we add a one
-                d_rcv_tps_data.push_back(1);
-            }
-        } else {
+        if (i < diff_symbol_index - 1 ||
+            (d_symbol_index_known && d_symbol_index == 0)) {
             d_rcv_tps_data.push_back(0);
+        } else {
+            d_rcv_tps_data.push_back(tps_majority_zero >= 0 ? 0 : 1);
         }
     }
 
     /*
-     * We now check whether a complete frame has been received. To do this, we first check
-     * whether the beginning of what we have received so far is equal to the 2-Byte
-     * synchronization word. Then we check the BCH parity code at the end.
+     * While synchronized, the TPS frame boundary is determined by the known
+     * 68-symbol timing, not by a successful BCH check. One damaged TPS frame
+     * must not interrupt the payload stream or shift its frame_start tags.
+     * Before synchronization, continue searching for a valid TPS frame in the
+     * sliding bit FIFO.
      */
-    if (std::equal(d_rcv_tps_data.begin() + 1,
-                   d_rcv_tps_data.begin() + d_tps_sync_size,
-                   d_tps_sync_evenv.begin())) {
-        // Verify parity for TPS data
-        if (d_pg.verify_bch_code(d_rcv_tps_data) == 0) {
-            // We have received a complete frame
-            d_frame_index = (d_rcv_tps_data[23] << 1) | d_rcv_tps_data[24];
-            d_symbol_index_known = true;
-            end_of_frame = true;
-            decode_tps_data();
+    const bool locked = d_symbol_index_known && !d_sync_start && !d_resync;
+    const bool expected_frame_end =
+        locked && d_symbol_index == d_symbols_per_frame - 1;
+
+    if (locked && !expected_frame_end) {
+        return false;
+    }
+
+    const bool sync_even = std::equal(d_rcv_tps_data.begin() + 1,
+                                     d_rcv_tps_data.begin() + d_tps_sync_size,
+                                     d_tps_sync_evenv.begin());
+    const bool sync_odd = std::equal(d_rcv_tps_data.begin() + 1,
+                                    d_rcv_tps_data.begin() + d_tps_sync_size,
+                                    d_tps_sync_oddv.begin());
+    const bool sync_valid = sync_even || sync_odd;
+
+    if (!expected_frame_end && !sync_valid) {
+        return false;
+    }
+
+    const bool bch_valid = sync_valid && d_pg.verify_bch_code(d_rcv_tps_data) == 0;
+    const int received_frame_index = (d_rcv_tps_data[23] << 1) | d_rcv_tps_data[24];
+
+    if (locked && bch_valid &&
+        (received_frame_index != d_frame_index ||
+         sync_even != ((d_frame_index % 2) == 0))) {
+        // A BCH-validated frame contradicts the tracked frame sequence.
+        // This is evidence of lost frame alignment, not an isolated bit error.
+        std::fprintf(stderr,
+                     "TPS_RESYNC: reason=FRAME_INDEX_MISMATCH, input_symbol=%" PRIu64
+                     ", expected_frame=%d, received_frame=%d\n",
+                     d_diag_input_symbols, d_frame_index, received_frame_index);
+        d_symbol_index_known = false;
+        d_tps_complete = false;
+        d_diag_frame_phase_valid = false;
+        d_consecutive_tps_errors = 0;
+        d_resync = true;
+    } else if (bch_valid) {
+        d_consecutive_tps_errors = 0;
+        d_frame_index = received_frame_index;
+        d_symbol_index_known = true;
+        end_of_frame = true;
+        decode_tps_data();
+    } else {
+        if (sync_valid) {
+            ++d_diag_bch_failures;
+        }
+
+        if (locked) {
+            ++d_consecutive_tps_errors;
+            if (d_consecutive_tps_errors == 1) {
+                // The OFDM timing is still known. Advance the frame index on
+                // the next symbol and keep the last validated TPS parameters.
+                end_of_frame = true;
+                std::fprintf(stderr,
+                             "TPS_FRAME_INVALID: reason=%s, input_symbol=%" PRIu64
+                             ", frame=%d, continuing=1\n",
+                             sync_valid ? "BCH_FAILED" : "SYNC_WORD_INVALID",
+                             d_diag_input_symbols, d_frame_index);
+            } else {
+                std::fprintf(stderr,
+                             "TPS_RESYNC: reason=CONSECUTIVE_TPS_ERRORS, input_symbol=%" PRIu64
+                             ", count=%u\n",
+                             d_diag_input_symbols, d_consecutive_tps_errors);
+                d_symbol_index_known = false;
+                d_tps_complete = false;
+                d_diag_frame_phase_valid = false;
+                d_resync = true;
+            }
         } else {
+            // No reliable frame timing yet: retain the acquisition behaviour.
             d_symbol_index_known = false;
-            end_of_frame = false;
             d_tps_complete = false;
+            d_diag_frame_phase_valid = false;
             d_resync = true;
-            // printf("TPS Decoder: process_tps_data(): frame error ---> resync!\n");
-        }
-        // Clear up FIFO
-        for (int i = 0; i < d_symbols_per_frame; ++i) {
-            d_rcv_tps_data[i] = 0;
-        }
-    } else if (std::equal(d_rcv_tps_data.begin() + 1,
-                          d_rcv_tps_data.begin() + d_tps_sync_size,
-                          d_tps_sync_oddv.begin())) {
-        // Verify parity for TPS data
-        if (d_pg.verify_bch_code(d_rcv_tps_data) == 0) {
-            // We have received a complete frame
-            d_frame_index = (d_rcv_tps_data[23] << 1) | d_rcv_tps_data[24];
-            d_symbol_index_known = true;
-            end_of_frame = true;
-            decode_tps_data();
-        } else {
-            d_symbol_index_known = false;
-            end_of_frame = false;
-            d_tps_complete = false;
-            d_resync = true;
-            // printf("TPS Decoder: process_tps_data(): frame error ---> resync!\n");
-        }
-        // Clear up FIFO
-        for (int i = 0; i < d_symbols_per_frame; ++i) {
-            d_rcv_tps_data[i] = 0;
+            d_consecutive_tps_errors = 0;
         }
     }
 
-    // We return end_of_frame
+    // Begin collecting the next TPS frame (or a fresh acquisition window).
+    for (int i = 0; i < d_symbols_per_frame; ++i) {
+        d_rcv_tps_data[i] = 0;
+    }
+
+    #if 0
+    if (end_of_frame) {
+        std::fprintf(stderr,
+                    "TPS_FRAME_OK: frame=%d, complete=%d, t_ms=%lld\n",
+                    d_frame_index,
+                    static_cast<int>(d_tps_complete),
+                    diagnostic_time_ms());
+    }
+    #endif
+
     return end_of_frame;
 }
 
 void dvbt_tps_decoder_impl::decode_tps_data()
 {
+    // Stage the two cell-ID halves until the odd frame completes the pair.
+    // This function-local staging object is shared across decoder instances.
     static tps_info_t tps_info{};
 
     // Frame number
@@ -361,9 +421,6 @@ dvbt_tps_decoder::sptr dvbt_tps_decoder::make(dvbt_transmission_mode_t transmiss
                                                             print_tps_data);
 }
 
-/*
- * The private constructor
- */
 dvbt_tps_decoder_impl::dvbt_tps_decoder_impl(dvbt_transmission_mode_t transmission_mode,
                                              bool print_tps_data)
     : gr::block(
@@ -399,7 +456,7 @@ dvbt_tps_decoder_impl::dvbt_tps_decoder_impl(dvbt_transmission_mode_t transmissi
       d_prev_frame_index{ 0 },
       d_tps_complete{ false },
       d_data_carriers(4 * d_num_data_carriers),
-      d_sync_start{ false },
+      d_sync_start{ true },
       d_tps_info{},
       // Message ports
       d_mp_mod_scheme{ pmt::intern("const") },
@@ -432,14 +489,11 @@ dvbt_tps_decoder_impl::dvbt_tps_decoder_impl(dvbt_transmission_mode_t transmissi
     message_port_register_out(d_mp_code_rate);
     message_port_register_out(d_mp_guard_int);
 
-    // No tag propagation in this block. Tags that are needed downstream are
-    // (re-)generated by this block.
+    // Acquisition drops input symbols; automatic tag propagation would leave
+    // downstream frame offsets inconsistent with the shorter output stream.
     set_tag_propagation_policy(TPP_DONT);
 }
 
-/*
- * Our virtual destructor.
- */
 dvbt_tps_decoder_impl::~dvbt_tps_decoder_impl() {}
 
 void dvbt_tps_decoder_impl::forecast(int noutput_items,
@@ -448,7 +502,7 @@ void dvbt_tps_decoder_impl::forecast(int noutput_items,
     int ninputs = ninput_items_required.size();
 
     for (int i = 0; i < ninputs; ++i) {
-        ninput_items_required[i] = 2 * noutput_items;
+        ninput_items_required[i] = noutput_items;
     }
 }
 
@@ -463,10 +517,11 @@ int dvbt_tps_decoder_impl::general_work(int noutput_items,
     std::vector<tag_t> tags;
 
     for (int i = 0; i < noutput_items; ++i) {
-        // We check if the block upstream has signaled us sync_start, which means that
-        // synchronization has not been achieved yet or that it has been lost.
+        // Upstream sync_start invalidates prior frame alignment. Payload must
+        // wait for TPS acquisition even if the OFDM samples now look usable.
         this->get_tags_in_window(tags, 0, i, i + 1, pmt::string_to_symbol("sync_start"));
         if (!tags.empty()) {
+            d_diag_frame_phase_valid = false;
             if (!d_sync_start) {
                 d_sync_start = true;
                 printf("TPS Decoder: general_work(): %s received from %s\n",
@@ -479,6 +534,7 @@ int dvbt_tps_decoder_impl::general_work(int noutput_items,
         // or more symbols have been lost.
         this->get_tags_in_window(tags, 0, i, i + 1, pmt::string_to_symbol("resync"));
         if (!tags.empty()) {
+            d_diag_frame_phase_valid = false;
             if (!d_resync) {
                 d_resync = true;
                 printf("TPS Decoder: general_work(): %s received from %s\n",
@@ -487,43 +543,61 @@ int dvbt_tps_decoder_impl::general_work(int noutput_items,
             }
         }
 
-        if (d_frame_end) {
+        const bool frame_start = d_frame_end;
+        const bool frame_resync = frame_start && (d_sync_start || d_resync);
+        if (frame_start) {
             // Being here means that the previous OFDM symbol constituted the end of a
             // frame. The current symbol is the first symbol of the next frame!
             d_frame_index = (d_frame_index + 1) % d_frames_per_superframe;
             d_symbol_index = 0;
             d_rel_symbol_index = 0;
-            const uint64_t offset = this->nitems_written(0) + i;
-            // This is a frame start, we signal it downstream
-            pmt::pmt_t key = pmt::string_to_symbol("frame_start");
-            pmt::pmt_t value = pmt::from_long(d_frame_index);
-            pmt::pmt_t srcid = pmt::string_to_symbol(blockid);
-            this->add_item_tag(0, offset, key, value, srcid);
-
-            // If "sync_start" and "resync" have been detected we need to re-synchronize.
-            if (d_sync_start || d_resync) {
-                const uint64_t offset = this->nitems_written(0) + i;
-                pmt::pmt_t key = pmt::string_to_symbol("resync");
-                pmt::pmt_t value = pmt::from_long(0);
-                pmt::pmt_t srcid = pmt::string_to_symbol(blockid);
-                this->add_item_tag(0, offset, key, value, srcid);
-            }
         } else {
             d_symbol_index = (d_symbol_index + 1) % d_symbols_per_frame;
             d_rel_symbol_index = (d_rel_symbol_index + 1) % 4;
         }
 
-        /*
-        // We obtain the relative symbol index (between 0 and 3) from the block upstream
+        // The OFDM synchronizer supplies the scattered-pilot phase for every
+        // symbol. Use it for data-carrier extraction and TPS symbol spacing.
+        // The TPS frame counter remains independent so inconsistent phases can
+        // still be detected instead of silently masking a lost symbol.
+        d_diag_input_symbols = nitems_read(0) + i;
         this->get_tags_in_window(
             tags, 0, i, i + 1, pmt::string_to_symbol("relative_symbol_index"));
-        if (!tags.empty()) {
-            d_rel_symbol_index = pmt::to_long(tags[0].value);
+        if (tags.empty()) {
+            ++d_diag_missing_phase_tags;
+            if (d_diag_missing_phase_tags == 1 || d_diag_missing_phase_tags % 1024 == 0) {
+                std::fprintf(stderr,
+                             "TPS_PHASE_TAG_MISSING: input_symbol=%" PRIu64
+                             ", missing_total=%" PRIu64 "\n",
+                             d_diag_input_symbols, d_diag_missing_phase_tags);
+            }
+        } else if (pmt::is_integer(tags[0].value)) {
+            const long received_phase = pmt::to_long(tags[0].value);
+            if (received_phase < 0 || received_phase > 3) {
+                std::fprintf(stderr,
+                             "TPS_PHASE_TAG_INVALID: input_symbol=%" PRIu64
+                             ", value=%ld\n",
+                             d_diag_input_symbols, received_phase);
+            } else {
+                if (d_diag_frame_phase_valid && received_phase != d_rel_symbol_index) {
+                    ++d_diag_phase_mismatches;
+                    std::fprintf(stderr,
+                                 "TPS_PHASE_MISMATCH: input_symbol=%" PRIu64
+                                 ", tps=%d, ofdm=%ld, total=%" PRIu64
+                                 ", forcing_resync=1\n",
+                                 d_diag_input_symbols, d_rel_symbol_index,
+                                 received_phase, d_diag_phase_mismatches);
+                    d_resync = true;
+                    d_diag_frame_phase_valid = false;
+                }
+                d_rel_symbol_index = static_cast<int>(received_phase);
+            }
         } else {
-            printf("TPS Decoder: general_work(): No relative symbol index found in the "
-                   "tag stream.\n");
+            std::fprintf(stderr,
+                         "TPS_PHASE_TAG_INVALID: input_symbol=%" PRIu64
+                         ", non-integer value\n", d_diag_input_symbols);
         }
-        */
+
         int diff_rel_symbol_index =
             (d_rel_symbol_index - d_prev_rel_symbol_index + 4) % 4;
         d_prev_rel_symbol_index = d_rel_symbol_index;
@@ -538,10 +612,18 @@ int dvbt_tps_decoder_impl::general_work(int noutput_items,
         d_frame_end = process_tps_data(&in[i * d_num_carriers], diff_rel_symbol_index);
 
         if (d_sync_start || d_resync) {
-            if (d_symbol_index_known && d_symbol_index == 0 && d_frame_index == 0 && d_tps_complete) {
+            if (d_symbol_index_known && d_symbol_index == 0 && d_frame_index == 0 &&
+                d_tps_complete) {
                 // This is a superframe start, we signal it downstream.
                 d_sync_start = false;
                 d_resync = false;
+                d_diag_frame_phase_valid = true;
+                std::fprintf(stderr,
+                             "TPS_SYNC_ACQUIRED: input_symbol=%" PRIu64
+                             ", frame=%d, bch_failures=%" PRIu64
+                             ", phase_mismatches=%" PRIu64 "\n",
+                             d_diag_input_symbols, d_frame_index,
+                             d_diag_bch_failures, d_diag_phase_mismatches);
                 // Send TPS information
                 message_port_pub(
                     d_mp_mod_scheme,
@@ -563,11 +645,27 @@ int dvbt_tps_decoder_impl::general_work(int noutput_items,
                 pmt::pmt_t value = pmt::from_long(0xaa);
                 pmt::pmt_t srcid = pmt::string_to_symbol(blockid);
                 this->add_item_tag(0, offset, key, value, srcid);
-                // TODO: remove the following line!
-                printf("TPS decoder: superframe_start sent.\n");
             } else {
-                consume_each(1); // Consume the input
-                return (0);      // Nothing has been produced
+                // Consume the rejected symbol and all preceding processed symbols.
+                consume_each(i + 1);
+                return i;
+            }
+        }
+
+        if (frame_start) {
+            const uint64_t offset = this->nitems_written(0) + i;
+            // This is a frame start, we signal it downstream
+            pmt::pmt_t key = pmt::string_to_symbol("frame_start");
+            pmt::pmt_t value = pmt::from_long(d_frame_index);
+            pmt::pmt_t srcid = pmt::string_to_symbol(blockid);
+            this->add_item_tag(0, offset, key, value, srcid);
+
+            // Forward the saved restart condition at the accepted frame boundary;
+            // acquisition above may already have cleared the live resync flags.
+            if (frame_resync) {
+                pmt::pmt_t key = pmt::string_to_symbol("resync");
+                pmt::pmt_t value = pmt::from_long(0);
+                this->add_item_tag(0, offset, key, value, srcid);
             }
         }
 
@@ -586,11 +684,8 @@ int dvbt_tps_decoder_impl::general_work(int noutput_items,
         }
     }
 
-    // Tell the runtime system how many input items we have consumed on
-    // each input stream.
     consume_each(noutput_items);
 
-    // Tell the runtime system how many output items we have produced.
     return (noutput_items);
 }
 

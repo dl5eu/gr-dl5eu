@@ -13,9 +13,42 @@
 
 #include "dvbt_viterbi_decoder_impl.h"
 #include <gnuradio/io_signature.h>
+#include <chrono>
+#include <cstdio>
+#include <ctime>
+#include <sstream>
+#include <string>
 
 namespace gr {
 namespace dl5eu {
+
+namespace {
+
+/*! 
+ * @brief Format the current local wall-clock time for diagnostic messages.
+ */
+std::string viterbi_diagnostic_timestamp()
+{
+    using namespace std::chrono;
+    const auto now = system_clock::now();
+    const auto milliseconds = duration_cast<std::chrono::milliseconds>(
+                                  now.time_since_epoch()) % 1000;
+    const std::time_t seconds = system_clock::to_time_t(now);
+    std::tm local_time{};
+#ifdef _WIN32
+    localtime_s(&local_time, &seconds);
+#else
+    localtime_r(&seconds, &local_time);
+#endif
+    char date_time[32];
+    std::strftime(date_time, sizeof(date_time), "%Y-%m-%d %H:%M:%S", &local_time);
+    char result[48];
+    std::snprintf(result, sizeof(result), "%s.%03d", date_time,
+                  static_cast<int>(milliseconds.count()));
+    return result;
+}
+
+} // namespace
 
 const unsigned char dvbt_viterbi_decoder_impl::d_puncture_1_2[2] = { 1, 1 };
 const unsigned char dvbt_viterbi_decoder_impl::d_puncture_2_3[4] = { 1, 1, 0, 1 };
@@ -68,7 +101,7 @@ void dvbt_viterbi_decoder_impl::dvbt_viterbi_chunks_init_generic(unsigned char* 
                                                                  unsigned char* pp0)
 {
 #endif
-    // Initialize starting metrics to prefer 0 state
+    // Equal metrics permit acquisition without assuming a known encoder state.
     int i, j;
 
 #ifdef DTV_SSE2
@@ -121,7 +154,7 @@ void dvbt_viterbi_decoder_impl::dvbt_viterbi_butterfly2_sse2(
     metric1 = mm1;
     path1 = pp1;
 
-    // Operate on 4 symbols (2 bits) at a time
+    // Four mother-code decisions advance two trellis steps (two decoded bits).
 
     __m128i m0, m1, m2, m3, decision0, decision1, survivor0, survivor1;
     __m128i metsv, metsvm;
@@ -239,7 +272,7 @@ void dvbt_viterbi_decoder_impl::dvbt_viterbi_butterfly2_generic(unsigned char* s
     metric1 = mm1;
     path1 = pp1;
 
-    // Operate on 4 symbols (2 bits) at a time
+    // Four mother-code decisions advance two trellis steps (two decoded bits).
 
     unsigned char m0[16], m1[16], m2[16], m3[16], decision0[16], decision1[16],
         survivor0[16], survivor1[16];
@@ -440,7 +473,7 @@ unsigned char dvbt_viterbi_decoder_impl::dvbt_viterbi_get_output_generic(
     store_pos = (store_pos + 1) % ntraceback;
 
 #ifdef DTV_SSE2
-    // TODO - find another way to extract the value
+    // Materialize packed SIMD lanes for scalar traceback over the 64 states.
     for (i = 0; i < 4; i++) {
         _mm_store_si128((__m128i*)&mmresult[i * 16], mm0[i]);
         _mm_store_si128((__m128i*)&ppresult[store_pos][i * 16], pp0[i]);
@@ -467,6 +500,9 @@ unsigned char dvbt_viterbi_decoder_impl::dvbt_viterbi_get_output_generic(
             minmetric = mmresult[i];
         }
     }
+
+    // Record the pre-normalization reference for diagnostic sampling only.
+    d_diag_last_minmetric = minmetric;
 
     // Trace back
     for (i = 0, pos = store_pos; i < (ntraceback - 1); i++) {
@@ -502,19 +538,18 @@ unsigned char dvbt_viterbi_decoder_impl::dvbt_viterbi_get_output_generic(
 dvbt_viterbi_decoder::sptr dvbt_viterbi_decoder::make(dvb_constellation_t constellation,
                                                       dvbt_hierarchy_t hierarchy,
                                                       dvb_code_rate_t coderate,
-                                                      int bsize)
+                                                      int bsize,
+                                                      bool diagnostics)
 {
     return gnuradio::make_block_sptr<dvbt_viterbi_decoder_impl>(
-        constellation, hierarchy, coderate, bsize);
+        constellation, hierarchy, coderate, bsize, diagnostics);
 }
 
-/*
- * The private constructor
- */
 dvbt_viterbi_decoder_impl::dvbt_viterbi_decoder_impl(dvb_constellation_t constellation,
                                                      dvbt_hierarchy_t hierarchy,
                                                      dvb_code_rate_t coderate,
-                                                     int bsize)
+                                                     int bsize,
+                                                     bool diagnostics)
     : block("dvbt_viterbi_decoder",
             io_signature::make(1, 1, sizeof(unsigned char)),
             io_signature::make(1, 1, sizeof(unsigned char))),
@@ -525,7 +560,8 @@ dvbt_viterbi_decoder_impl::dvbt_viterbi_decoder_impl(dvb_constellation_t constel
       d_bsize(bsize),
       d_nsymbols(d_bsize * d_n / d_m),
       d_nbits(2 * d_k * d_bsize),
-      d_inbits(d_nbits)
+      d_inbits(d_nbits),
+      d_diagnostics(diagnostics)
 {
     if (config.d_code_rate_HP == C1_2) {
         d_puncture = d_puncture_1_2;
@@ -548,10 +584,9 @@ dvbt_viterbi_decoder_impl::dvbt_viterbi_decoder_impl(dvb_constellation_t constel
     }
 
     /*
-     * We input n bytes, each carrying m bits => nm bits
-     * The result after decoding is km bits, therefore km/8 bytes.
-     *
-     * out/in rate is therefore km/8n in bytes
+     * Each input byte is a label carrying m coded bits. At code rate k/n,
+     * the decoded byte rate is m*k/(8*n) times the input label rate.
+     * Schedule complete blocks to preserve puncturing and byte alignment.
      */
 
     assert((d_bsize * d_n) % d_m == 0);
@@ -573,10 +608,86 @@ dvbt_viterbi_decoder_impl::dvbt_viterbi_decoder_impl(dvb_constellation_t constel
     set_tag_propagation_policy(TPP_DONT);
 }
 
-/*
- * Our virtual destructor.
- */
 dvbt_viterbi_decoder_impl::~dvbt_viterbi_decoder_impl() {}
+
+/*! 
+ * @brief Write a bounded diagnostic event without flooding the console.
+ */
+void dvbt_viterbi_decoder_impl::diagnostic_event(const char* type,
+                                                 const std::string& details)
+{
+    if (!d_diagnostics) {
+        return;
+    }
+    report_diagnostics();
+    if (d_diag_logged_events < 4) {
+        const std::string timestamp = viterbi_diagnostic_timestamp();
+        std::fprintf(stderr, "%s: %s %s\n", type, timestamp.c_str(), details.c_str());
+        ++d_diag_logged_events;
+    } else {
+        ++d_diag_suppressed_events;
+    }
+}
+
+/*! 
+ * @brief Log the Viterbi processing rate, resets, tags and sampled path metrics.
+ */
+void dvbt_viterbi_decoder_impl::report_diagnostics()
+{
+    if (!d_diagnostics) {
+        return;
+    }
+    const auto now = diagnostic_clock::now();
+    const double elapsed = std::chrono::duration<double>(now - d_diag_last_report).count();
+    if (elapsed < 1.0) {
+        return;
+    }
+
+    const uint64_t input_delta = d_diag_input_items - d_diag_prev_input_items;
+    const uint64_t output_delta = d_diag_output_items - d_diag_prev_output_items;
+    const double best_average = d_diag_metric_samples
+                                    ? static_cast<double>(d_diag_best_sum) /
+                                          d_diag_metric_samples
+                                    : 0.0;
+    const double spread_average = d_diag_metric_samples
+                                      ? static_cast<double>(d_diag_spread_sum) /
+                                            d_diag_metric_samples
+                                      : 0.0;
+    const unsigned int spread_min = d_diag_metric_samples ? d_diag_spread_min : 0;
+    const std::string timestamp = viterbi_diagnostic_timestamp();
+
+    std::fprintf(stderr,
+                 "VITERBI_STAT: %s input=%llu output=%llu rate_in=%.0f rate_out=%.0f "
+                 "resync_tags=%llu resets=%llu restarts=%llu frame_in=%llu frame_out=%llu "
+                 "last_frame_in=%llu last_frame_out=%llu metric_samples=%llu "
+                 "best_avg=%.1f spread_avg=%.1f spread_min=%u spread_max=%u "
+                 "suppressed_events=%llu\n",
+                 timestamp.c_str(),
+                 static_cast<unsigned long long>(d_diag_input_items),
+                 static_cast<unsigned long long>(d_diag_output_items),
+                 input_delta / elapsed, output_delta / elapsed,
+                 static_cast<unsigned long long>(d_diag_resync_tags),
+                 static_cast<unsigned long long>(d_diag_resets),
+                 static_cast<unsigned long long>(d_diag_restarts),
+                 static_cast<unsigned long long>(d_diag_frame_tags_in),
+                 static_cast<unsigned long long>(d_diag_frame_tags_out),
+                 static_cast<unsigned long long>(d_diag_last_frame_input),
+                 static_cast<unsigned long long>(d_diag_last_frame_output),
+                 static_cast<unsigned long long>(d_diag_metric_samples),
+                 best_average, spread_average, spread_min, d_diag_spread_max,
+                 static_cast<unsigned long long>(d_diag_suppressed_events));
+
+    d_diag_prev_input_items = d_diag_input_items;
+    d_diag_prev_output_items = d_diag_output_items;
+    d_diag_last_report = now;
+    d_diag_metric_samples = 0;
+    d_diag_best_sum = 0;
+    d_diag_spread_sum = 0;
+    d_diag_spread_min = 255;
+    d_diag_spread_max = 0;
+    d_diag_logged_events = 0;
+    d_diag_suppressed_events = 0;
+}
 
 void dvbt_viterbi_decoder_impl::forecast(int noutput_items,
                                          gr_vector_int& ninput_items_required)
@@ -603,9 +714,9 @@ int dvbt_viterbi_decoder_impl::general_work(int noutput_items,
         unsigned char* out = (unsigned char*)output_items[m];
 
         /*
-         * Look for a tag that signals us to re-synchronize and consume all input items
-         * that are in input buffer so far.
-         * This will actually reset the viterbi decoder.
+         * Locate a reset boundary in the scheduled input range. If it lies ahead,
+         * discard only the preceding items first; the tagged item must be processed
+         * after trellis reset, not skipped or decoded with stale survivors.
          */
         std::vector<tag_t> tags;
         const uint64_t nread = this->nitems_read(0); // number of items read on port 0
@@ -613,10 +724,29 @@ int dvbt_viterbi_decoder_impl::general_work(int noutput_items,
                                 0,
                                 nread,
                                 nread + (nblocks * d_nsymbols),
-                                // pmt::string_to_symbol("superframe_start"));
                                 pmt::string_to_symbol("resync"));
 
         if (!tags.empty()) {
+            if (tags[0].offset > nread) {
+                // Discard input preceding the resync tag. Reset only when the
+                // tagged item becomes the first input item of the next call.
+                const uint64_t skipped = tags[0].offset - nread;
+                d_diag_input_items += skipped;
+                consume_each(skipped);
+                report_diagnostics();
+                return 0;
+            }
+            d_diag_resync_tags += tags.size();
+            ++d_diag_resets;
+            {
+                std::ostringstream details;
+                details << "input_offset=" << nread
+                        << " tag_offset=" << tags[0].offset
+                        << " tag_count=" << tags.size()
+                        << " skip=" << (tags[0].offset - nread)
+                        << " output_offset=" << this->nitems_written(0);
+                diagnostic_event("VITERBI_RESET", details.str());
+            }
             d_init = 0;
 
 #ifdef DTV_SSE2
@@ -625,20 +755,16 @@ int dvbt_viterbi_decoder_impl::general_work(int noutput_items,
             dvbt_viterbi_chunks_init_generic(d_metric0_generic, d_path0_generic);
 #endif
 
-            if (tags[0].offset - nread) {
-                consume_each(tags[0].offset - nread);
-                return (0);
-            }
         }
 
-        // This is actually the Viterbi decoder
+        // Keep survivor state continuous across processing blocks.
         for (int n = 0; n < nblocks; n++) {
             /*
              * Depuncture and unpack a block.
              * We receive the symbol (d_m bits/byte) in one byte (e.g. for QAM16
              * 00001111). Create a buffer of bytes containing just one bit/byte. Also
              * depuncture according to the puncture vector.
-             * TODO - reduce the number of branches while depuncturing.
+             * Erasure value 2 leaves both bit hypotheses equally likely.
              */
             for (int count = 0, i = 0; i < d_nsymbols; i++) {
                 for (int j = (d_m - 1); j >= 0; j--) {
@@ -661,7 +787,7 @@ int dvbt_viterbi_decoder_impl::general_work(int noutput_items,
              * Decode a block.
              */
             for (int in_count = 0; in_count < d_nbits; in_count++) {
-                if ((in_count % 4) == 0) { // 0 or 3
+                if ((in_count % 4) == 0) { // Two trellis steps per four mother-code bits.
 
 #ifdef DTV_SSE2
                     dvbt_viterbi_butterfly2_sse2(&d_inbits[in_count & 0xfffffffc],
@@ -677,16 +803,31 @@ int dvbt_viterbi_decoder_impl::general_work(int noutput_items,
                                                     d_path1_generic);
 #endif
 
-                    if ((in_count > 0) && (in_count % 16) == 8) { // 8 or 11
+                    if ((in_count > 0) && (in_count % 16) == 8) { // Byte traceback cadence.
                         unsigned char c;
+                        unsigned char bestmetric;
 
 #ifdef DTV_SSE2
-                        dvbt_viterbi_get_output_sse2(
+                        bestmetric = dvbt_viterbi_get_output_sse2(
                             d_metric0, d_path0, d_ntraceback, &c);
 #else
-                        dvbt_viterbi_get_output_generic(
+                        bestmetric = dvbt_viterbi_get_output_generic(
                             d_metric0_generic, d_path0_generic, d_ntraceback, &c);
 #endif
+
+                        // Sample metric distribution only once every 256 decoded bytes.
+                        if (d_diagnostics && (++d_diag_tracebacks % 256) == 0) {
+                            const unsigned int spread = bestmetric - d_diag_last_minmetric;
+                            ++d_diag_metric_samples;
+                            d_diag_best_sum += bestmetric;
+                            d_diag_spread_sum += spread;
+                            if (spread < d_diag_spread_min) {
+                                d_diag_spread_min = spread;
+                            }
+                            if (spread > d_diag_spread_max) {
+                                d_diag_spread_max = spread;
+                            }
+                        }
 
                         if (d_init == 0) {
                             if (out_count >= d_ntraceback) {
@@ -704,18 +845,26 @@ int dvbt_viterbi_decoder_impl::general_work(int noutput_items,
 
     int to_out = noutput_items;
 
-    if (d_init == 0) {
-        /*
-         * Send superframe_start to signal this situation
-         * downstream
-         */
+    const bool restarting = (d_init == 0);
+    if (restarting) {
+        // Mark the first usable output after trellis restart so downstream
+        // byte processing can restart at the same output position.
         const uint64_t offset = this->nitems_written(0);
         pmt::pmt_t key = pmt::string_to_symbol("superframe_start");
         pmt::pmt_t value = pmt::from_long(1);
         pmt::pmt_t srcid = pmt::string_to_symbol("dvbt_viterbi_decoder");
         this->add_item_tag(0, offset, key, value, srcid);
+        ++d_diag_restarts;
+        d_diag_first_frame_after_restart = true;
+        {
+            std::ostringstream details;
+            details << "input_offset=" << this->nitems_read(0)
+                    << " output_offset=" << offset
+                    << " traceback=" << d_ntraceback;
+            diagnostic_event("VITERBI_RESTART", details.str());
+        }
 
-        // Take in consideration the traceback length
+        // Suppress startup bytes whose survivor history has not yet converged.
         to_out = to_out - d_ntraceback;
         d_init = 1;
     }
@@ -728,22 +877,35 @@ int dvbt_viterbi_decoder_impl::general_work(int noutput_items,
                             nread,
                             nread + (nblocks * d_nsymbols),
                             pmt::string_to_symbol("frame_start"));
-    if (tags.size()) {
+    d_diag_frame_tags_in += tags.size();
+    for (const auto& tag : tags) {
+        // The initial traceback is discarded on restart. The first
+        // frame_start then belongs at the same output position as
+        // superframe_start. In subsequent calls, the traceback delay applies.
         const uint64_t offset =
-            this->nitems_written(0) + d_ntraceback +
-            (tags[0].offset - this->nitems_read(0)) * d_m * d_k / (d_n * 8.0);
+            this->nitems_written(0) + (restarting ? 0 : d_ntraceback) +
+            (tag.offset - nread) * d_m * d_k / (d_n * 8.0);
         pmt::pmt_t key = pmt::string_to_symbol("frame_start");
-        pmt::pmt_t value = tags[0].value;
         pmt::pmt_t srcid = pmt::string_to_symbol("dvbt_viterbi_decoder");
-        this->add_item_tag(0, offset, key, value, srcid);
+        this->add_item_tag(0, offset, key, tag.value, srcid);
+        ++d_diag_frame_tags_out;
+        d_diag_last_frame_input = tag.offset;
+        d_diag_last_frame_output = offset;
+        if (d_diag_first_frame_after_restart || tags.size() > 1) {
+            std::ostringstream details;
+            details << "input_offset=" << tag.offset
+                    << " output_offset=" << offset
+                    << " tag_count=" << tags.size();
+            diagnostic_event("VITERBI_FRAME_START", details.str());
+            d_diag_first_frame_after_restart = false;
+        }
     }
 
-    // Tell runtime system how many input items we consumed on
-    // each input stream.
+    d_diag_input_items += nblocks * d_nsymbols;
+    d_diag_output_items += to_out;
     consume_each(nblocks * d_nsymbols);
+    report_diagnostics();
 
-    // Tell runtime system how many output items we produced.
-    // printf("\nViterbi Decoder: to_out: %i\n", to_out);
     return (to_out);
 }
 

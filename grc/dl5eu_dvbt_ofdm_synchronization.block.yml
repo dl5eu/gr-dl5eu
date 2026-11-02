@@ -4,7 +4,10 @@ category: '[dl5eu]'
 
 templates:
   imports: from gnuradio import dl5eu
-  make: dl5eu.dvbt_ofdm_synchronization(${transmission_mode.val}, ${guard_interval.val}, ${snr}, ${interpolate})
+  make: dl5eu.dvbt_ofdm_synchronization(${transmission_mode.val}, ${guard_interval.val}, ${snr}, ${interpolate}, ${sample_rate}, ${squelch_db}, ${diagnostics})
+  callbacks:
+  - set_sample_rate(${sample_rate})
+  - set_squelch_threshold(${squelch_db})
 
 parameters:
 - id: transmission_mode
@@ -34,6 +37,18 @@ parameters:
   default: 'True'
   options: ['True', 'False']
   option_labels: ['Yes', 'No']
+- id: sample_rate
+  label: Sample Rate After Resampling (Hz)
+  dtype: float
+  default: '8e6/7'
+- id: squelch_db
+  label: Squelch Threshold (dBFS, -200 disables)
+  dtype: float
+  default: '-60.0'
+- id: diagnostics
+  label: Verbose Diagnostics
+  dtype: bool
+  default: 'False'
 
 inputs:
 - label: in
@@ -63,5 +78,20 @@ outputs:
   dtype: float
   vlen: 1
   optional: true
+
+documentation: |-
+  The optional frequency-error output is in Hz.
+  The optional sampling-rate-error output is in ppm.
+  Sample Rate is the nominal complex sample rate at this block input,
+  i.e. AFTER any Rational Resampler or decimating low-pass filter.
+  The nominal sample rate can be updated while running. This affects only
+  the frequency-error output scaling (Hz), not synchronization tracking.
+  For DVB-T channels it is usually 8/7 times the channel bandwidth.
+  Squelch is based on uncalibrated mean digital IQ power at this block input.
+  It is not a calibrated RF level (dBm); the optimum value depends on gain
+  and input scaling. The squelch closes 3 dB below its opening threshold.
+  Use -200 to disable. The threshold can be changed while running, e.g.
+  from a QT GUI Range connected to this parameter.
+  Verbose Diagnostics adds expensive CP probes.
 
 file_format: 1

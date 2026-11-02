@@ -10,15 +10,15 @@
 
 package:
   name: {{ name|lower }}
-  version: {{ version }}
-
+  version: {{ version.split("+")[0] }}
+  
 source:
   # use local path or git repository depending on if the build is local or done on CI
   path: "../.."  # [not os.environ.get("CI")]
   git_url: {{ environ.get('FEEDSTOCK_ROOT', "../..") }}  # [os.environ.get("CI")]
 
 build:
-  number: 0
+  number: 2
   ignore_run_exports_from:
     # this package only uses libboost-headers, but libboost-devel is needed
     # in host to ensure build compatibility with the gnuradio-core package

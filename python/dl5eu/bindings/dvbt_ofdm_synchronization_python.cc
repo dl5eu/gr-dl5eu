@@ -14,7 +14,7 @@
 /* BINDTOOL_GEN_AUTOMATIC(0)                                                       */
 /* BINDTOOL_USE_PYGCCXML(0)                                                        */
 /* BINDTOOL_HEADER_FILE(dvbt_ofdm_synchronization.h) */
-/* BINDTOOL_HEADER_FILE_HASH(574cb2da197725d006f199b33e0294ed)                     */
+/* BINDTOOL_HEADER_FILE_HASH(c236d78b3ade93369987bbe4148946ac)                     */
 /***********************************************************************************/
 
 #include <pybind11/complex.h>
@@ -44,8 +44,25 @@ void bind_dvbt_ofdm_synchronization(py::module& m)
              py::arg("guard_interval"),
              py::arg("snr"),
              py::arg("interpolate"),
+             py::arg("sample_rate") = 8.0e6 / 7.0,
+             py::arg("squelch_db") = -60.0f,
+             py::arg("diagnostics") = false,
              D(dvbt_ofdm_synchronization, make))
 
+        .def("set_sample_rate",
+             &dvbt_ofdm_synchronization::set_sample_rate,
+             py::arg("sample_rate"),
+             "Set the nominal input sample rate in Hz while running.")
+        .def("get_sample_rate",
+             &dvbt_ofdm_synchronization::get_sample_rate,
+             "Return the nominal input sample rate in Hz.")
+        .def("set_squelch_threshold",
+             &dvbt_ofdm_synchronization::set_squelch_threshold,
+             py::arg("threshold_db"),
+             "Set the digital-IQ squelch threshold in dBFS (-200 disables).")
+        .def("get_squelch_threshold",
+             &dvbt_ofdm_synchronization::get_squelch_threshold,
+             "Return the configured digital-IQ squelch threshold in dBFS.")
 
         ;
 }

@@ -14,7 +14,7 @@
 /* BINDTOOL_GEN_AUTOMATIC(0)                                                       */
 /* BINDTOOL_USE_PYGCCXML(0)                                                        */
 /* BINDTOOL_HEADER_FILE(dvbt_viterbi_decoder.h)                                        */
-/* BINDTOOL_HEADER_FILE_HASH(4816138c51837a3c720ad4c2520f196d)                     */
+/* BINDTOOL_HEADER_FILE_HASH(c915a6c81a36a842f55a49f329ec9417)                     */
 /***********************************************************************************/
 
 #include <pybind11/complex.h>
@@ -44,6 +44,7 @@ void bind_dvbt_viterbi_decoder(py::module& m)
              py::arg("hierarchy"),
              py::arg("coderate"),
              py::arg("bsize"),
+             py::arg("diagnostics") = false,
              D(dvbt_viterbi_decoder, make))
 
 

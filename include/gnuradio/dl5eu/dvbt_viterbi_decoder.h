@@ -44,11 +44,13 @@ public:
      * \param hierarchy hierarchy used. \n
      * \param coderate coderate used. \n
      * \param bsize block size.
+     * \param diagnostics enable verbose decoder diagnostics.
      */
     static sptr make(dvb_constellation_t constellation,
                      dvbt_hierarchy_t hierarchy,
                      dvb_code_rate_t coderate,
-                     int bsize);
+                     int bsize,
+                     bool diagnostics = false);
 };
 
 } // namespace dl5eu

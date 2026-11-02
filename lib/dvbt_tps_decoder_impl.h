@@ -18,10 +18,29 @@
 #include "dvbt_configure.h"
 #include "dvbt_pilot_gen.h"
 #include <gnuradio/dl5eu/dvbt_tps_decoder.h>
+#include <cstdint>
 
 namespace gr {
 namespace dl5eu {
 
+/*!
+ * @brief Recover TPS frame timing and extract payload carriers from equalized symbols.
+ *
+ * Input items contain all active carriers; output items contain only payload
+ * carriers. Pilot phase selects one of four extraction tables. TPS validates the
+ * 68-symbol frame and four-frame superframe structure. During acquisition, input
+ * symbols are consumed without output until a usable superframe boundary is known.
+ * Stream tags are regenerated because dropped acquisition symbols change offsets.
+ */
+/*!
+ * @brief Recover TPS frame timing and extract payload carriers from equalized symbols.
+ *
+ * Input items contain all active carriers; output items contain only payload
+ * carriers. Pilot phase selects one of four extraction tables. TPS validates the
+ * 68-symbol frame and four-frame superframe structure. During acquisition, input
+ * symbols are consumed without output until a usable superframe boundary is known.
+ * Stream tags are regenerated because dropped acquisition symbols change offsets.
+ */
 class dvbt_tps_decoder_impl : public dvbt_tps_decoder
 {
     typedef struct {
@@ -78,7 +97,7 @@ private:
     const int d_num_cpilots;
     const int* d_cpilots;
 
-    // Scattered pilots
+    // TPS carrier positions (not scattered pilots).
     const int d_num_tps_carriers;
     const int* d_tps_carriers;
 
@@ -90,15 +109,13 @@ private:
     const int d_symbols_per_frame;
     const int d_frames_per_superframe;
 
-    // Keeps the received TPS data in a FIFO
-    // TODO circular_buffers are superior to deques.
-    // We should migrate them all.
+    // Sliding 68-position TPS history; position zero is the DBPSK reference.
     std::deque<char> d_rcv_tps_data;
     // Keeps the TPS sync sequence
     std::deque<char> d_tps_sync_evenv;
     std::deque<char> d_tps_sync_oddv;
 
-    // TPS parity check matrix
+    // Legacy parity-table declaration; validation is delegated to d_pg.
     static const char d_h[];
 
     // Whether or not the decoded TPS parameters should be printed on the console.
@@ -109,10 +126,10 @@ private:
 
     // Indicates whether the last symbol was a frame end
     bool d_frame_end;
-    // Indicates whther a re-sync should be signaled downstream
+    // Requests reacquisition before payload output resumes.
     bool d_resync;
 
-    // Symbol Index
+    // Pilot phase is modulo four; absolute symbol position is modulo 68.
     int d_rel_symbol_index;
     int d_prev_rel_symbol_index;
     int d_symbol_index;
@@ -124,11 +141,19 @@ private:
 
     bool d_tps_complete;
 
-    // A list of the data carriers for the current configuration (mode), one
-    // for each symbol in a frame.
+    // Four payload extraction maps, indexed by scattered-pilot phase.
     volk::vector<int> d_data_carriers;
 
     bool d_sync_start;
+
+    // Phase-consistency validity also gates mismatch-triggered resynchronization.
+    // Counters below record absolute input symbols and observed failures.
+    bool d_diag_frame_phase_valid{ false };
+    uint64_t d_diag_input_symbols{ 0 };
+    uint64_t d_diag_missing_phase_tags{ 0 };
+    uint64_t d_diag_phase_mismatches{ 0 };
+    uint64_t d_diag_bch_failures{ 0 };
+    unsigned int d_consecutive_tps_errors{ 0 };
 
     tps_info_t d_tps_info;
 
@@ -139,43 +164,105 @@ private:
     pmt::pmt_t d_mp_guard_int;
 
     /*!
-     * \brief This method creates the data carriers list that contains the list of
-     * carriers that carry actual DTV data (payload carriers).
+     * @brief Precompute payload indices for each of the four scattered-pilot phases.
+     *
+     * Exclude continual pilots, scattered pilots and TPS carriers once during setup,
+     * so the processing path only gathers preselected payload samples.
      */
     void create_data_carrier_list();
 
     /*!
-     * \brief The method decodes the TPS carriers of a given symbol, thus appending a new
-     * bit to those received so far. If 68 were received since the last complete tps, we
-     * check whether the sync word is present at the beginning, and if it passes the BCH
-     * parity code.
+     * @brief Differentially demodulate TPS and validate or advance frame timing.
+     * @param in One equalized active-carrier vector.
+     * @param diff_symbol_index Modulo-four phase advance since the previous symbol;
+     * missing positions receive placeholders, without claiming to repair lost symbols.
+     * @return True at an accepted frame end, including one tolerated invalid frame;
+     * false otherwise, including when resynchronization is required.
      *
-     * The present implementation simply performs the differential demodulation (TPS is
-     * transmitted in DBPSK) for every carrier, and then performs a majority vote between
-     * all carriers to verify which bit was sent.
+     * DBPSK decisions are combined by majority vote across TPS carriers. Acquisition
+     * uses a sliding sync-word/BCH search. Once locked, the known 68-symbol boundary
+     * survives one invalid frame without replacing validated parameters. Two successive
+     * invalid frames or a BCH-valid contradictory frame number force reacquisition.
+     * verify_bch_code() checks parity here; this path does not correct TPS bit errors.
      */
     bool process_tps_data(const gr_complex* in, const int diff_symbol_index);
 
+    /*!
+     * @brief Extract fields from a TPS frame that has passed sync and BCH validation.
+     *
+     * Assemble the low cell-ID byte from an even frame and the high byte from an odd
+     * frame. On an odd frame, publish the assembled structure internally and mark it
+     * complete. This is field extraction, not a BCH error-correction step.
+     */
     void decode_tps_data();
 
+    /*!
+     * @brief Print the readable convolutional-code-rate label for a TPS field.
+     * @param coderate Encoded TPS code-rate value.
+     */
     void print_coderate(coderate_t coderate);
 
+    /*!
+     * @brief Print the readable guard-interval label for a TPS field.
+     * @param guard_interval Encoded TPS guard-interval value.
+     */
     void print_guard_interval(guard_interval_t guard_interval);
 
+    /*!
+     * @brief Print the readable hierarchy label for a TPS field.
+     * @param hierarchy Encoded TPS hierarchy value.
+     */
     void print_hierarchy(hierarchy_t hierarchy);
 
+    /*!
+     * @brief Print the readable constellation label for a TPS field.
+     * @param modulation_scheme Encoded TPS constellation value.
+     */
     void print_modulation_scheme(modulation_scheme_t modulation_scheme);
 
+    /*!
+     * @brief Print modulation, hierarchy, code rates, guard interval and assembled cell ID.
+     * @param tps_info TPS fields to display; cell ID is read from d_tps_info.
+     *
+     * Called after acquisition when console display was requested.
+     */
     void print_tps_info(const tps_info_t& tps_info);
 
 public:
+    /*!
+     * @brief Initialize carrier maps, TPS history and parameter message ports.
+     * @param transmission_mode Configured 2K/8K mode, which fixes vector dimensions.
+     * @param print_tps_data Print validated TPS information when synchronization is acquired.
+     *
+     * The const, mode, fec and guard message ports publish encoded TPS values as PMT
+     * pairs on acquisition; they do not resize this block's stream items dynamically.
+     */
     dvbt_tps_decoder_impl(dvbt_transmission_mode_t transmission_mode,
                           bool print_tps_data);
     ~dvbt_tps_decoder_impl();
 
-    // Where all the action really happens
+    /*!
+     * @brief Request one active-carrier input vector per requested payload vector.
+     * @param noutput_items Requested output symbol count.
+     * @param ninput_items_required Receives the corresponding input vector count.
+     *
+     * Acquisition may discard symbols, so a work call can produce fewer than requested.
+     */
     void forecast(int noutput_items, gr_vector_int& ninput_items_required);
 
+    /*!
+     * @brief Track frame timing, publish synchronization tags and gather payload carriers.
+     * @param noutput_items Available output-vector capacity.
+     * @param ninput_items Scheduler-supplied input vector counts.
+     * @param input_items Equalized active-carrier vectors.
+     * @param output_items Payload-only vectors.
+     * @return Number of vectors produced; consumed acquisition symbols may exceed this.
+     *
+     * Use relative_symbol_index for carrier extraction, while checking its consistency
+     * against independently tracked TPS timing. Regenerate symbol_index, frame_start,
+     * superframe_start and resync tags at output offsets. A rejected acquisition symbol
+     * is consumed exactly once, preventing repeated processing of the same input.
+     */
     int general_work(int noutput_items,
                      gr_vector_int& ninput_items,
                      gr_vector_const_void_star& input_items,
