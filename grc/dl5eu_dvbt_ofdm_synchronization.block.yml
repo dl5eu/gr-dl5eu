@@ -84,8 +84,8 @@ documentation: |-
   The optional sampling-rate-error output is in ppm.
   Sample Rate is the nominal complex sample rate at this block input,
   i.e. AFTER any Rational Resampler or decimating low-pass filter.
-  The nominal sample rate can be updated while running. This affects only
-  the frequency-error output scaling (Hz), not synchronization tracking.
+  Changing the nominal sample rate while running requests fresh acquisition
+  and marks the next output with sync_start for downstream decoder restart.
   For DVB-T channels it is usually 8/7 times the channel bandwidth.
   Squelch is based on uncalibrated mean digital IQ power at this block input.
   It is not a calibrated RF level (dBm); the optimum value depends on gain

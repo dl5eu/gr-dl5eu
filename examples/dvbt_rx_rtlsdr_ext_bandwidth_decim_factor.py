@@ -1,47 +1,32 @@
-# this module will be imported in the into your flowgraph
-# arg: 0 = 2MHz 1 = 1MHz, 2 = 500Khz, 3 = 333KHz, 4 = 250KHz, 5 = 150KHz, 6 = 125KHz, 7 = 66KHz, 8 = 33KHz, 9 = 25KHz, 10 = 20 KHz
+# Central receiver-bandwidth configuration. Edit only these entries when
+# changing the available bandwidths; update the matching GRC resampler ports.
+PLUTO_SAMPLE_RATE = 2400000
+BANDWIDTHS = (
+    ("2 MHz", 20, 21),
+    ("1 MHz", 10, 21),
+    ("500 kHz", 5, 21),
+    ("333 kHz", 160, 1009),
+    ("250 kHz", 5, 42),
+    ("125 kHz", 5, 84),
+    ("66 kHz", 280, 8909),
+)
 
-def factor(arg):
 
-#	if arg==0:
-#		return 1.000
-#	elif arg==1:
-#		return 2.000
-#	elif arg==2:
-#        	return 4.000
-#	elif arg==3:
-#		return 6.006
-#	elif arg==4:
-#		return 8.000
-#	elif arg==5:
-#		return 13.333
-#	elif arg==6:
-#		return 16.000
-#	elif arg==7:
-#		return 30.303
-#	elif arg==8:
-#		return 60.606
-#	elif arg==9:
-#		return 80.000
-#	elif arg==10:
-#		return 100.000
-#	else:
-#		return 1.000
-	
-	if arg==0:
-		return 1.000
-	elif arg==1:
-		return 2.000
-	elif arg==2:
-        	return 4.000
-	elif arg==3:
-		return 6.006
-	elif arg==4:
-		return 8.000
-	elif arg==5:
-		return 16.000
-	elif arg==6:
-		return 30.303
-	else:
-		return 1.000
-		
+def interpolation(index):
+    return BANDWIDTHS[int(index)][1]
+
+
+def decimation(index):
+    return BANDWIDTHS[int(index)][2]
+
+
+def sample_rate(index):
+    return PLUTO_SAMPLE_RATE * interpolation(index) / decimation(index)
+
+
+def labels():
+    return [entry[0] for entry in BANDWIDTHS]
+
+
+def indices():
+    return list(range(len(BANDWIDTHS)))

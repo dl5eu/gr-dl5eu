@@ -51,6 +51,7 @@ public:
 
     virtual void set_sample_rate(double sample_rate) = 0;
     virtual double get_sample_rate() const = 0;
+    virtual void request_resynchronization() = 0;
 
     virtual void set_squelch_threshold(float threshold_db) = 0;
     virtual float get_squelch_threshold() const = 0;

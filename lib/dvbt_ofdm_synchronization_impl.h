@@ -66,6 +66,8 @@ private:
     const int d_fft_length;
     const int d_cp_length;
     std::atomic<double> d_sample_rate;
+    std::atomic<bool> d_resynchronization_requested{ false };
+    uint64_t d_reconfiguration_discard_remaining{ 0 };
     std::atomic<float> d_squelch_db;
     const bool d_diagnostics;
 
@@ -403,6 +405,7 @@ public:
 
     void set_sample_rate(double sample_rate) override;
     double get_sample_rate() const override;
+    void request_resynchronization() override;
 
     /*!
      * @brief Atomically change the digital-IQ squelch opening threshold.

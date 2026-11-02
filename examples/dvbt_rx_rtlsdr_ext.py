@@ -98,7 +98,7 @@ class dvbt_rx_rtlsdr_ext(gr.top_block, Qt.QWidget):
         try: conf_center_freq = self._conf_center_freq_config.getint('setup', 'center_freq')
         except: conf_center_freq = 437000000
         self.conf_center_freq = conf_center_freq
-        self.sync_sample_rate = sync_sample_rate = 2400000 * [20/21, 10/21, 5/21, 160/1009, 5/42, 5/84, 280/8909][decim_select]
+        self.sync_sample_rate = sync_sample_rate = bandwidth_decim_factor.sample_rate(decim_select)
         self.squelch_threshold = squelch_threshold = -60
         self.rf_gain_db = rf_gain_db = conf_rf_gain_db
         self.if_gain_db = if_gain_db = conf_if_gain_db
@@ -184,38 +184,38 @@ class dvbt_rx_rtlsdr_ext(gr.top_block, Qt.QWidget):
         for c in range(0, 2):
             self.top_grid_layout.setColumnStretch(c, 1)
         self.rational_resampler_xxx_4 = filter.rational_resampler_ccc(
-                interpolation=5,
-                decimation=84,
+                interpolation=bandwidth_decim_factor.interpolation(5),
+                decimation=bandwidth_decim_factor.decimation(5),
                 taps=[],
                 fractional_bw=0)
         self.rational_resampler_xxx_3_0 = filter.rational_resampler_ccc(
-                interpolation=280,
-                decimation=8909,
+                interpolation=bandwidth_decim_factor.interpolation(6),
+                decimation=bandwidth_decim_factor.decimation(6),
                 taps=[],
                 fractional_bw=0)
         self.rational_resampler_xxx_3 = filter.rational_resampler_ccc(
-                interpolation=5,
-                decimation=42,
+                interpolation=bandwidth_decim_factor.interpolation(4),
+                decimation=bandwidth_decim_factor.decimation(4),
                 taps=[],
                 fractional_bw=0)
         self.rational_resampler_xxx_2_0 = filter.rational_resampler_ccc(
-                interpolation=160,
-                decimation=1009,
+                interpolation=bandwidth_decim_factor.interpolation(3),
+                decimation=bandwidth_decim_factor.decimation(3),
                 taps=[],
                 fractional_bw=0)
         self.rational_resampler_xxx_2 = filter.rational_resampler_ccc(
-                interpolation=5,
-                decimation=21,
+                interpolation=bandwidth_decim_factor.interpolation(2),
+                decimation=bandwidth_decim_factor.decimation(2),
                 taps=[],
                 fractional_bw=0)
         self.rational_resampler_xxx_1 = filter.rational_resampler_ccc(
-                interpolation=10,
-                decimation=21,
+                interpolation=bandwidth_decim_factor.interpolation(1),
+                decimation=bandwidth_decim_factor.decimation(1),
                 taps=[],
                 fractional_bw=0)
         self.rational_resampler_xxx_0 = filter.rational_resampler_ccc(
-                interpolation=20,
-                decimation=21,
+                interpolation=bandwidth_decim_factor.interpolation(0),
+                decimation=bandwidth_decim_factor.decimation(0),
                 taps=[],
                 fractional_bw=0)
         self.qtgui_const_sink_x_0 = qtgui.const_sink_c(
@@ -267,7 +267,7 @@ class dvbt_rx_rtlsdr_ext(gr.top_block, Qt.QWidget):
         self.iio_pluto_source_0 = iio.fmcomms2_source_fc32('' if '' else iio.get_pluto_uri(), [True, True], 32768)
         self.iio_pluto_source_0.set_len_tag_key('packet_len')
         self.iio_pluto_source_0.set_frequency(center_freq)
-        self.iio_pluto_source_0.set_samplerate(2400000)
+        self.iio_pluto_source_0.set_samplerate(bandwidth_decim_factor.PLUTO_SAMPLE_RATE)
         self.iio_pluto_source_0.set_gain_mode(0, 'manual')
         self.iio_pluto_source_0.set_gain(0, rf_gain_db)
         self.iio_pluto_source_0.set_quadrature(True)
@@ -334,7 +334,7 @@ class dvbt_rx_rtlsdr_ext(gr.top_block, Qt.QWidget):
         self.dl5eu_mpeg_ts_monitor_0 = dl5eu.mpeg_ts_monitor(1000, '', False, False)
         self.dl5eu_dvbt_viterbi_decoder_0 = dl5eu.dvbt_viterbi_decoder(dtv.MOD_16QAM, dtv.NH, dtv.C2_3, 768, False)
         self.dl5eu_dvbt_tps_decoder_0 = dl5eu.dvbt_tps_decoder(dtv.T2k, True)
-        self.dl5eu_dvbt_ofdm_synchronization_0 = dl5eu.dvbt_ofdm_synchronization(dtv.T2k, dtv.GI_1_32, 10, True, sync_sample_rate, squelch_threshold, True)
+        self.dl5eu_dvbt_ofdm_synchronization_0 = dl5eu.dvbt_ofdm_synchronization(dtv.T2k, dtv.GI_1_32, 10, True, sync_sample_rate, squelch_threshold, False)
         self.blocks_vector_to_stream_2_0 = blocks.vector_to_stream(gr.sizeof_gr_complex*1, 1512)
         self.blocks_vector_to_stream_1 = blocks.vector_to_stream(gr.sizeof_char*1, 1512)
         self.blocks_selector_1 = blocks.selector(gr.sizeof_gr_complex*1,decim_select,0)
@@ -411,7 +411,7 @@ class dvbt_rx_rtlsdr_ext(gr.top_block, Qt.QWidget):
         self._conf_decim_select_config.set('setup', 'decim_select', str(self.decim_select))
         self._conf_decim_select_config.write(open('config.ini', 'w'))
         self._decim_select_callback(self.decim_select)
-        self.set_sync_sample_rate(2400000 * [20/21, 10/21, 5/21, 160/1009, 5/42, 5/84, 280/8909][self.decim_select])
+        self.set_sync_sample_rate(bandwidth_decim_factor.sample_rate(self.decim_select))
         self.blocks_selector_0.set_output_index(self.decim_select)
         self.blocks_selector_1.set_input_index(self.decim_select)
 

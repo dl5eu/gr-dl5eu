@@ -14,7 +14,7 @@
 /* BINDTOOL_GEN_AUTOMATIC(0)                                                       */
 /* BINDTOOL_USE_PYGCCXML(0)                                                        */
 /* BINDTOOL_HEADER_FILE(dvbt_ofdm_synchronization.h) */
-/* BINDTOOL_HEADER_FILE_HASH(c236d78b3ade93369987bbe4148946ac)                     */
+/* BINDTOOL_HEADER_FILE_HASH(aaf98f312919350b2b4e531ece30048d)                     */
 /***********************************************************************************/
 
 #include <pybind11/complex.h>
@@ -56,6 +56,9 @@ void bind_dvbt_ofdm_synchronization(py::module& m)
         .def("get_sample_rate",
              &dvbt_ofdm_synchronization::get_sample_rate,
              "Return the nominal input sample rate in Hz.")
+        .def("request_resynchronization",
+             &dvbt_ofdm_synchronization::request_resynchronization,
+             "Restart OFDM acquisition at the next processing opportunity.")
         .def("set_squelch_threshold",
              &dvbt_ofdm_synchronization::set_squelch_threshold,
              py::arg("threshold_db"),

@@ -150,15 +150,14 @@ blocks:
     label2: ''
     label3: ''
     label4: ''
-    labels: '[ "2 MHz", "1 MHz", "500 kHz", "333 kHz", "250 kHz", "125 kHz", "66 kHz"
-      ]'
+    labels: bandwidth_decim_factor.labels()
     num_opts: '0'
     option0: '0'
     option1: '1'
     option2: '2'
     option3: '3'
     option4: '4'
-    options: '[ 0, 1, 2, 3, 4, 5, 6 ]'
+    options: bandwidth_decim_factor.indices()
     orient: Qt.QVBoxLayout
     type: int
     value: conf_decim_select
@@ -254,24 +253,33 @@ blocks:
     coordinate: [768, 36.0]
     rotation: 0
     state: enabled
+- name: sync_sample_rate
+  id: variable
+  parameters:
+    comment: ''
+    value: bandwidth_decim_factor.sample_rate(decim_select)
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [904, 36.0]
+    rotation: 0
+    state: enabled
 - name: bandwidth_decim_factor
   id: epy_module
   parameters:
     alias: ''
     comment: ''
-    source_code: "# this module will be imported in the into your flowgraph\n# arg:\
-      \ 0 = 2MHz 1 = 1MHz, 2 = 500Khz, 3 = 333KHz, 4 = 250KHz, 5 = 150KHz, 6 = 125KHz,\
-      \ 7 = 66KHz, 8 = 33KHz, 9 = 25KHz, 10 = 20 KHz\n\ndef factor(arg):\n\n#\tif\
-      \ arg==0:\n#\t\treturn 1.000\n#\telif arg==1:\n#\t\treturn 2.000\n#\telif arg==2:\n\
-      #        \treturn 4.000\n#\telif arg==3:\n#\t\treturn 6.006\n#\telif arg==4:\n\
-      #\t\treturn 8.000\n#\telif arg==5:\n#\t\treturn 13.333\n#\telif arg==6:\n#\t\
-      \treturn 16.000\n#\telif arg==7:\n#\t\treturn 30.303\n#\telif arg==8:\n#\t\t\
-      return 60.606\n#\telif arg==9:\n#\t\treturn 80.000\n#\telif arg==10:\n#\t\t\
-      return 100.000\n#\telse:\n#\t\treturn 1.000\n\t\n\tif arg==0:\n\t\treturn 1.000\n\
-      \telif arg==1:\n\t\treturn 2.000\n\telif arg==2:\n        \treturn 4.000\n\t\
-      elif arg==3:\n\t\treturn 6.006\n\telif arg==4:\n\t\treturn 8.000\n\telif arg==5:\n\
-      \t\treturn 16.000\n\telif arg==6:\n\t\treturn 30.303\n\telse:\n\t\treturn 1.000\n\
-      \t\t\n"
+    source_code: "# Central receiver-bandwidth configuration. Edit only these entries\
+      \ when\n# changing the available bandwidths; update the matching GRC resampler\
+      \ ports.\nPLUTO_SAMPLE_RATE = 2400000\nBANDWIDTHS = (\n    (\"2 MHz\", 20, 21),\n\
+      \    (\"1 MHz\", 10, 21),\n    (\"500 kHz\", 5, 21),\n    (\"333 kHz\", 160,\
+      \ 1009),\n    (\"250 kHz\", 5, 42),\n    (\"125 kHz\", 5, 84),\n    (\"66 kHz\"\
+      , 280, 8909),\n)\n\n\ndef interpolation(index):\n    return BANDWIDTHS[int(index)][1]\n\
+      \n\ndef decimation(index):\n    return BANDWIDTHS[int(index)][2]\n\n\ndef sample_rate(index):\n\
+      \    return PLUTO_SAMPLE_RATE * interpolation(index) / decimation(index)\n\n\
+      \ndef labels():\n    return [entry[0] for entry in BANDWIDTHS]\n\n\ndef indices():\n\
+      \    return list(range(len(BANDWIDTHS)))"
   states:
     bus_sink: false
     bus_source: false
@@ -420,12 +428,12 @@ blocks:
     affinity: ''
     alias: ''
     comment: ''
-    diagnostics: 'True'
+    diagnostics: 'False'
     guard_interval: GI_1_32
     interpolate: 'True'
     maxoutbuf: '0'
     minoutbuf: '0'
-    sample_rate: 8e6/7
+    sample_rate: sync_sample_rate
     snr: '10'
     squelch_db: squelch_threshold
     transmission_mode: T2k
@@ -433,7 +441,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [368, 616.0]
+    coordinate: [320, 612.0]
     rotation: 0
     state: enabled
 - name: dl5eu_dvbt_tps_decoder_0
@@ -689,7 +697,7 @@ blocks:
     minoutbuf: '0'
     quadrature: 'True'
     rfdc: 'True'
-    samplerate: '2400000'
+    samplerate: bandwidth_decim_factor.PLUTO_SAMPLE_RATE
     type: fc32
     uri: ''
   states:
@@ -990,9 +998,9 @@ blocks:
     affinity: ''
     alias: ''
     comment: ''
-    decim: '21'
+    decim: bandwidth_decim_factor.decimation(0)
     fbw: '0'
-    interp: '20'
+    interp: bandwidth_decim_factor.interpolation(0)
     maxoutbuf: '0'
     minoutbuf: '0'
     taps: '[]'
@@ -1010,9 +1018,9 @@ blocks:
     affinity: ''
     alias: ''
     comment: ''
-    decim: '21'
+    decim: bandwidth_decim_factor.decimation(1)
     fbw: '0'
-    interp: '10'
+    interp: bandwidth_decim_factor.interpolation(1)
     maxoutbuf: '0'
     minoutbuf: '0'
     taps: '[]'
@@ -1030,9 +1038,9 @@ blocks:
     affinity: ''
     alias: ''
     comment: ''
-    decim: '21'
+    decim: bandwidth_decim_factor.decimation(2)
     fbw: '0'
-    interp: '5'
+    interp: bandwidth_decim_factor.interpolation(2)
     maxoutbuf: '0'
     minoutbuf: '0'
     taps: '[]'
@@ -1050,9 +1058,9 @@ blocks:
     affinity: ''
     alias: ''
     comment: ''
-    decim: '1009'
+    decim: bandwidth_decim_factor.decimation(3)
     fbw: '0'
-    interp: '160'
+    interp: bandwidth_decim_factor.interpolation(3)
     maxoutbuf: '0'
     minoutbuf: '0'
     taps: ''
@@ -1070,9 +1078,9 @@ blocks:
     affinity: ''
     alias: ''
     comment: ''
-    decim: '42'
+    decim: bandwidth_decim_factor.decimation(4)
     fbw: '0'
-    interp: '5'
+    interp: bandwidth_decim_factor.interpolation(4)
     maxoutbuf: '0'
     minoutbuf: '0'
     taps: '[]'
@@ -1090,9 +1098,9 @@ blocks:
     affinity: ''
     alias: ''
     comment: ''
-    decim: '8909'
+    decim: bandwidth_decim_factor.decimation(6)
     fbw: '0'
-    interp: '280'
+    interp: bandwidth_decim_factor.interpolation(6)
     maxoutbuf: '0'
     minoutbuf: '0'
     taps: ''
@@ -1110,9 +1118,9 @@ blocks:
     affinity: ''
     alias: ''
     comment: ''
-    decim: '84'
+    decim: bandwidth_decim_factor.decimation(5)
     fbw: '0'
-    interp: '5'
+    interp: bandwidth_decim_factor.interpolation(5)
     maxoutbuf: '0'
     minoutbuf: '0'
     taps: '[]'

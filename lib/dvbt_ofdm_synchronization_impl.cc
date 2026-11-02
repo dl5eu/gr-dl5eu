@@ -601,7 +601,8 @@ bool dvbt_ofdm_synchronization_impl::ml_sync(const gr_complex* in,
         }
         d_avg_max = d_lambda[peak];
         ++d_diag_peak_overrides;
-        if (d_diag_peak_overrides == 1 || d_diag_peak_overrides % 100 == 0) {
+        if (d_diagnostics &&
+            (d_diag_peak_overrides == 1 || d_diag_peak_overrides % 100 == 0)) {
             std::fprintf(stderr,
                          "CP_PEAK_OVERRIDE: quality=%.3f, distance=%d, total=%" PRIu64 "\n",
                          d_cp_quality, peak + lookup_stop - d_cp_start,
@@ -933,19 +934,23 @@ dvbt_ofdm_synchronization_impl::dvbt_ofdm_synchronization_impl(
 dvbt_ofdm_synchronization_impl::~dvbt_ofdm_synchronization_impl() {}
 
 /*!
- * @brief Changes the nominal input sample rate used for the frequency-error display.
+ * @brief Update the input sample rate and restart acquisition when it changes.
  * @param sample_rate New input sample rate after resampling, in samples per second.
  * @throws std::invalid_argument If sample_rate is not positive or finite.
  *
- * This setting changes only the conversion of frequency error to Hz. The current
- * synchronization and tracking state is not reset.
+ * A changed rate invalidates the previous frequency and timing estimates. The
+ * processing thread handles the requested restart without racing its tracking state.
+ * Calling this function with the unchanged rate does not restart acquisition.
  */
 void dvbt_ofdm_synchronization_impl::set_sample_rate(double sample_rate)
 {
     if (!std::isfinite(sample_rate) || sample_rate <= 0.0) {
         throw std::invalid_argument("DVB-T sample rate must be positive and finite");
     }
-    d_sample_rate.store(sample_rate, std::memory_order_relaxed);
+    const double previous = d_sample_rate.exchange(sample_rate, std::memory_order_relaxed);
+    if (previous != sample_rate) {
+        request_resynchronization();
+    }
 }
 
 /*!
@@ -955,6 +960,18 @@ void dvbt_ofdm_synchronization_impl::set_sample_rate(double sample_rate)
 double dvbt_ofdm_synchronization_impl::get_sample_rate() const
 {
     return d_sample_rate.load(std::memory_order_relaxed);
+}
+
+/*!
+ * @brief Request a controlled restart of OFDM acquisition from another thread.
+ *
+ * The processing thread resets its frequency, timing and symbol-phase state,
+ * marks the next output with sync_start, and discards a short input interval to
+ * drain samples remaining from the previously selected resampler branch.
+ */
+void dvbt_ofdm_synchronization_impl::request_resynchronization()
+{
+    d_resynchronization_requested.store(true, std::memory_order_release);
 }
 
 /*!
@@ -1018,6 +1035,35 @@ int dvbt_ofdm_synchronization_impl::general_work(int noutput_items,
     d_consumed = 0;
     d_to_output = 0;
     const uint64_t input_base = nitems_read(0);
+
+    // Apply a GUI-requested change only in the processing thread. The input
+    // branch may still contain buffered samples from the previous selection.
+    if (d_resynchronization_requested.exchange(false, std::memory_order_acq_rel)) {
+        send_sync_start(0);
+        reset_synchronization();
+        d_diag_last_good_valid = false;
+        d_diag_await_reacquisition = false;
+        d_diag_recent_count = 0;
+        d_diag_recent_next = 0;
+
+        // Drain a bounded 250 ms of input before attempting new CP acquisition.
+        // This is a practical buffer guard, not a guarantee for arbitrarily large
+        // upstream queues. Its duration is independent of the bandwidth list.
+        const double discard = std::min(std::ceil(get_sample_rate() * 0.25),
+                                        static_cast<double>(std::numeric_limits<int>::max()));
+        d_reconfiguration_discard_remaining = static_cast<uint64_t>(discard);
+        std::fprintf(stderr,
+                     "BANDWIDTH_RESTART: sample_rate=%.3f, discard=%" PRIu64 " samples\n",
+                     get_sample_rate(), d_reconfiguration_discard_remaining);
+    }
+
+    if (d_reconfiguration_discard_remaining != 0) {
+        const int discard = static_cast<int>(std::min<uint64_t>(
+            static_cast<uint64_t>(ninput_items[0]), d_reconfiguration_discard_remaining));
+        d_reconfiguration_discard_remaining -= discard;
+        consume_each(discard);
+        return 0;
+    }
 
     for (int i = 0; i < noutput_items; ++i) {
         int required_for_interpolation = d_fft_length + d_cp_length;
@@ -1132,34 +1178,37 @@ int dvbt_ofdm_synchronization_impl::general_work(int noutput_items,
                 // Three consistent CP positions were found. Only the final
                 // symbol is decoded; no tentative symbol reaches downstream.
                 // Use the last input sample needed by the third CP search.
-                const uint64_t acquired_sample =
-                    input_base + d_consumed + centered_cp_position + confirmation_half_width;
-                const uint64_t cp_sample = input_base + d_consumed + candidate_cp_position;
-                std::fprintf(stderr,
-                             "CP_ACQUIRED: sample=%" PRIu64 ", cp_sample=%" PRIu64
-                             ", power=%.1f dB, full_searches=%" PRIu64
-                             ", first_candidates=%" PRIu64
-                             ", confirmation_failures=%" PRIu64,
-                             acquired_sample, cp_sample, power_db,
-                             d_diag_full_searches, d_diag_first_candidates,
-                             d_diag_confirmation_failures);
-                if (d_signal_return_seen && acquired_sample >= d_signal_return_sample) {
-                    std::fprintf(stderr, ", since_return=%" PRIu64 " samples",
-                                 acquired_sample - d_signal_return_sample);
+                if (d_diagnostics) {
+                    const uint64_t acquired_sample =
+                        input_base + d_consumed + centered_cp_position +
+                        confirmation_half_width;
+                    const uint64_t cp_sample = input_base + d_consumed + candidate_cp_position;
+                    std::fprintf(stderr,
+                                 "CP_ACQUIRED: sample=%" PRIu64 ", cp_sample=%" PRIu64
+                                 ", power=%.1f dB, full_searches=%" PRIu64
+                                 ", first_candidates=%" PRIu64
+                                 ", confirmation_failures=%" PRIu64,
+                                 acquired_sample, cp_sample, power_db,
+                                 d_diag_full_searches, d_diag_first_candidates,
+                                 d_diag_confirmation_failures);
+                    if (d_signal_return_seen && acquired_sample >= d_signal_return_sample) {
+                        std::fprintf(stderr, ", since_return=%" PRIu64 " samples",
+                                     acquired_sample - d_signal_return_sample);
+                    }
+                    if (d_diag_await_reacquisition && d_diag_last_good_valid &&
+                        cp_sample >= d_diag_last_good_cp_sample) {
+                        const uint64_t since_good = cp_sample - d_diag_last_good_cp_sample;
+                        const int symbol_length = d_fft_length + d_cp_length;
+                        const int remainder = static_cast<int>(since_good % symbol_length);
+                        const int phase_residual = remainder > symbol_length / 2
+                                                       ? remainder - symbol_length : remainder;
+                        std::fprintf(stderr, ", since_good=%" PRIu64
+                                             ", phase_residual=%d",
+                                     since_good, phase_residual);
+                    }
+                    std::fprintf(stderr, "\n");
+                    std::fflush(stderr);
                 }
-                if (d_diag_await_reacquisition && d_diag_last_good_valid &&
-                    cp_sample >= d_diag_last_good_cp_sample) {
-                    const uint64_t since_good = cp_sample - d_diag_last_good_cp_sample;
-                    const int symbol_length = d_fft_length + d_cp_length;
-                    const int remainder = static_cast<int>(since_good % symbol_length);
-                    const int phase_residual = remainder > symbol_length / 2
-                                                   ? remainder - symbol_length : remainder;
-                    std::fprintf(stderr, ", since_good=%" PRIu64
-                                         ", phase_residual=%d",
-                                 since_good, phase_residual);
-                }
-                std::fprintf(stderr, "\n");
-                std::fflush(stderr);
                 d_diag_await_reacquisition = false;
                 observed_cp_position = candidate_cp_position;
                 d_initial_acquired = true;
@@ -1331,7 +1380,7 @@ int dvbt_ofdm_synchronization_impl::general_work(int noutput_items,
 
             // Independently measure the pilot phase on every acquired OFDM symbol.
             // This check does not modify d_current_symbol, equalization or stream tags.
-            if (d_symbol_acq) {
+            if (d_diagnostics && d_symbol_acq) {
                 const int observed_phase = estimate_symbol_index(d_integer_freq_derotated);
                 ++d_diag_sp_checks;
                 const float expected_score = d_corr_sp[d_current_symbol];
@@ -1424,11 +1473,13 @@ int dvbt_ofdm_synchronization_impl::general_work(int noutput_items,
             constexpr float max_fine_freq = 2.0f * static_cast<float>(GR_M_PI);
             if (!std::isfinite(d_fine_freq) || !std::isfinite(d_freq_aux) ||
                 std::abs(d_fine_freq) > max_fine_freq) {
-                std::fprintf(stderr,
-                             "FREQ_LOST: fine_freq=%.5f, freq_aux=%.5f, "
-                             "integer_offset=%d, cp_quality=%.3f\n",
-                             d_fine_freq, d_freq_aux, d_freq_offset, d_cp_quality);
-                std::fflush(stderr);
+                if (d_diagnostics) {
+                    std::fprintf(stderr,
+                                 "FREQ_LOST: fine_freq=%.5f, freq_aux=%.5f, "
+                                 "integer_offset=%d, cp_quality=%.3f\n",
+                                 d_fine_freq, d_freq_aux, d_freq_offset, d_cp_quality);
+                    std::fflush(stderr);
+                }
                 send_sync_start(d_to_output);
                 reset_synchronization();
                 d_consumed += required_for_interpolation;
@@ -1438,12 +1489,12 @@ int dvbt_ofdm_synchronization_impl::general_work(int noutput_items,
         } else {
         		// Synchronization has been lost.
         		if (d_initial_acquired) {
-            std::fprintf(stderr,
-                         "CP_LOST: sample=%" PRIu64 ", power=%.1f dBFS, "
-                         "quality=%.3f, reason=%s\n",
-                         input_base + d_consumed, power_db, d_cp_quality,
-                         d_diag_cp_rejection.reason);
             if (d_diagnostics) {
+                std::fprintf(stderr,
+                             "CP_LOST: sample=%" PRIu64 ", power=%.1f dBFS, "
+                             "quality=%.3f, reason=%s\n",
+                             input_base + d_consumed, power_db, d_cp_quality,
+                             d_diag_cp_rejection.reason);
                 // Capture both tracking results before resetting the receiver.
                 const float wide_quality = d_cp_quality;
                 const cp_rejection_diagnostic wide_cp_rejection = d_diag_cp_rejection;
