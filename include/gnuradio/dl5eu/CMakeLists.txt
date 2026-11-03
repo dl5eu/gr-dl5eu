@@ -13,4 +13,6 @@ install(FILES api.h
     dvbt_ofdm_synchronization.h
     dvbt_tps_decoder.h
     dvbt_viterbi_decoder.h
-    mpeg_ts_monitor.h DESTINATION include/gnuradio/dl5eu)
+    mpeg_ts_monitor.h
+    dvbt_reed_solomon_dec.h
+    dvbt_energy_descramble.h DESTINATION include/gnuradio/dl5eu)

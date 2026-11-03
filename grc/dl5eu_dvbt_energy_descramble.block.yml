@@ -1,0 +1,36 @@
+id: dl5eu_dvbt_energy_descramble
+label: DVB-T Energy Descramble
+flags: [ python, cpp ]
+category: '[dl5eu]'
+
+parameters:
+-   id: nsize
+    label: Blocks(188 Bytes)
+    dtype: int
+    default: '8'
+
+inputs:
+-   domain: stream
+    dtype: byte
+    vlen: ${ nsize*188 }
+
+outputs:
+-   domain: stream
+    dtype: byte
+    vlen: 1
+
+asserts:
+- ${ nsize > 0 }
+
+templates:
+  imports: from gnuradio import dl5eu
+  make: dl5eu.dvbt_energy_descramble(${nsize})
+
+cpp_templates:
+    includes: ['#include <gnuradio/dl5eu/dvbt_energy_descramble.h>']
+    declarations: 'dl5eu::dvbt_energy_descramble::sptr ${id};'
+    make: |-
+        this->${id} = dl5eu::dvbt_energy_descramble::make(${nsize});
+    link: ['gnuradio::gnuradio-dl5eu']
+
+file_format: 1

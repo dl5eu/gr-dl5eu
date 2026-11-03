@@ -25,6 +25,8 @@ namespace py = pybind11;
     void bind_dvbt_tps_decoder(py::module& m);
     void bind_dvbt_viterbi_decoder(py::module& m);
     void bind_mpeg_ts_monitor(py::module& m);
+    void bind_dvbt_reed_solomon_dec(py::module& m);
+    void bind_dvbt_energy_descramble(py::module& m);
 // ) END BINDING_FUNCTION_PROTOTYPES
 
 
@@ -57,5 +59,7 @@ PYBIND11_MODULE(dl5eu_python, m)
     bind_dvbt_tps_decoder(m);
     bind_dvbt_viterbi_decoder(m);
     bind_mpeg_ts_monitor(m);
+    bind_dvbt_reed_solomon_dec(m);
+    bind_dvbt_energy_descramble(m);
     // ) END BINDING_FUNCTION_CALLS
 }

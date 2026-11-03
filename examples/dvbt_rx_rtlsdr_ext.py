@@ -27,10 +27,11 @@ from PyQt5 import Qt
 from argparse import ArgumentParser
 from gnuradio.eng_arg import eng_float, intx
 from gnuradio import eng_notation
-from gnuradio import iio
 from gnuradio import network
 import configparser
 import dvbt_rx_rtlsdr_ext_bandwidth_decim_factor as bandwidth_decim_factor  # embedded python module
+import osmosdr
+import time
 import sip
 import threading
 
@@ -118,6 +119,20 @@ class dvbt_rx_rtlsdr_ext(gr.top_block, Qt.QWidget):
         for r in range(1, 2):
             self.top_grid_layout.setRowStretch(r, 1)
         for c in range(0, 1):
+            self.top_grid_layout.setColumnStretch(c, 1)
+        self._if_gain_db_range = qtgui.Range(0, 40, 1, conf_if_gain_db, 0)
+        self._if_gain_db_win = qtgui.RangeWidget(self._if_gain_db_range, self.set_if_gain_db, "IF gain", "counter", int, QtCore.Qt.Horizontal)
+        self.top_grid_layout.addWidget(self._if_gain_db_win, 1, 1, 1, 1)
+        for r in range(1, 2):
+            self.top_grid_layout.setRowStretch(r, 1)
+        for c in range(1, 2):
+            self.top_grid_layout.setColumnStretch(c, 1)
+        self._freq_corr_ppm_range = qtgui.Range((-100), 100, 1, conf_freq_corr_ppm, 0)
+        self._freq_corr_ppm_win = qtgui.RangeWidget(self._freq_corr_ppm_range, self.set_freq_corr_ppm, "Freq. ppm", "counter", int, QtCore.Qt.Horizontal)
+        self.top_grid_layout.addWidget(self._freq_corr_ppm_win, 2, 1, 1, 1)
+        for r in range(2, 3):
+            self.top_grid_layout.setRowStretch(r, 1)
+        for c in range(1, 2):
             self.top_grid_layout.setColumnStretch(c, 1)
         # Create the options list
         self._decim_select_options = [0, 1, 2, 3, 4, 5, 6]
@@ -263,24 +278,23 @@ class dvbt_rx_rtlsdr_ext(gr.top_block, Qt.QWidget):
             self.top_grid_layout.setRowStretch(r, 1)
         for c in range(0, 2):
             self.top_grid_layout.setColumnStretch(c, 1)
+        self.osmosdr_source_0 = osmosdr.source(
+            args="numchan=" + str(1) + " " + 'rtl=0,offset_tune=0,tuner_xtal=28.8e6,rtl_xtal=28.8e6'
+        )
+        self.osmosdr_source_0.set_time_source('external', 0)
+        self.osmosdr_source_0.set_time_now(osmosdr.time_spec_t(time.time()), osmosdr.ALL_MBOARDS)
+        self.osmosdr_source_0.set_sample_rate(1200000)
+        self.osmosdr_source_0.set_center_freq(center_freq, 0)
+        self.osmosdr_source_0.set_freq_corr(freq_corr_ppm, 0)
+        self.osmosdr_source_0.set_dc_offset_mode(0, 0)
+        self.osmosdr_source_0.set_iq_balance_mode(0, 0)
+        self.osmosdr_source_0.set_gain_mode(False, 0)
+        self.osmosdr_source_0.set_gain(rf_gain_db, 0)
+        self.osmosdr_source_0.set_if_gain(if_gain_db, 0)
+        self.osmosdr_source_0.set_bb_gain(20, 0)
+        self.osmosdr_source_0.set_antenna('', 0)
+        self.osmosdr_source_0.set_bandwidth(1200000, 0)
         self.network_udp_sink_0 = network.udp_sink(gr.sizeof_char, 1, '230.0.0.1', 2000, 0, 1316, True)
-        self.iio_pluto_source_0 = iio.fmcomms2_source_fc32('' if '' else iio.get_pluto_uri(), [True, True], 32768)
-        self.iio_pluto_source_0.set_len_tag_key('packet_len')
-        self.iio_pluto_source_0.set_frequency(center_freq)
-        self.iio_pluto_source_0.set_samplerate(bandwidth_decim_factor.PLUTO_SAMPLE_RATE)
-        self.iio_pluto_source_0.set_gain_mode(0, 'manual')
-        self.iio_pluto_source_0.set_gain(0, rf_gain_db)
-        self.iio_pluto_source_0.set_quadrature(True)
-        self.iio_pluto_source_0.set_rfdc(True)
-        self.iio_pluto_source_0.set_bbdc(True)
-        self.iio_pluto_source_0.set_filter_params('Auto', '', 0, 0)
-        self._if_gain_db_range = qtgui.Range(0, 40, 1, conf_if_gain_db, 0)
-        self._if_gain_db_win = qtgui.RangeWidget(self._if_gain_db_range, self.set_if_gain_db, "IF gain", "counter", int, QtCore.Qt.Horizontal)
-        self.top_grid_layout.addWidget(self._if_gain_db_win, 1, 1, 1, 1)
-        for r in range(1, 2):
-            self.top_grid_layout.setRowStretch(r, 1)
-        for c in range(1, 2):
-            self.top_grid_layout.setColumnStretch(c, 1)
         self.freq_error = qtgui.number_sink(
             gr.sizeof_float,
             0,
@@ -318,23 +332,16 @@ class dvbt_rx_rtlsdr_ext(gr.top_block, Qt.QWidget):
             self.top_grid_layout.setRowStretch(r, 1)
         for c in range(0, 2):
             self.top_grid_layout.setColumnStretch(c, 1)
-        self._freq_corr_ppm_range = qtgui.Range((-100), 100, 1, conf_freq_corr_ppm, 0)
-        self._freq_corr_ppm_win = qtgui.RangeWidget(self._freq_corr_ppm_range, self.set_freq_corr_ppm, "Freq. ppm", "counter", int, QtCore.Qt.Horizontal)
-        self.top_grid_layout.addWidget(self._freq_corr_ppm_win, 2, 1, 1, 1)
-        for r in range(2, 3):
-            self.top_grid_layout.setRowStretch(r, 1)
-        for c in range(1, 2):
-            self.top_grid_layout.setColumnStretch(c, 1)
         self.dtv_dvbt_symbol_inner_interleaver_0 = dtv.dvbt_symbol_inner_interleaver(1512, dtv.T2k, 0)
-        self.dtv_dvbt_reed_solomon_dec_0 = dtv.dvbt_reed_solomon_dec(2, 8, 0x11d, 255, 239, 8, 51, 8)
-        self.dtv_dvbt_energy_descramble_0 = dtv.dvbt_energy_descramble(8)
         self.dtv_dvbt_demap_0 = dtv.dvbt_demap(1512, dtv.MOD_16QAM, dtv.NH, dtv.T2k, 1)
         self.dtv_dvbt_convolutional_deinterleaver_0 = dtv.dvbt_convolutional_deinterleaver(136, 12, 17)
         self.dtv_dvbt_bit_inner_deinterleaver_0 = dtv.dvbt_bit_inner_deinterleaver(1512, dtv.MOD_16QAM, dtv.NH, dtv.T2k)
-        self.dl5eu_mpeg_ts_monitor_0 = dl5eu.mpeg_ts_monitor(1000, '', False, False)
+        self.dl5eu_mpeg_ts_monitor_0 = dl5eu.mpeg_ts_monitor(1000, 'D:\\Projekte\\GNURadio\\ts_monitor_rs.csv', False, False)
         self.dl5eu_dvbt_viterbi_decoder_0 = dl5eu.dvbt_viterbi_decoder(dtv.MOD_16QAM, dtv.NH, dtv.C2_3, 768, False)
         self.dl5eu_dvbt_tps_decoder_0 = dl5eu.dvbt_tps_decoder(dtv.T2k, True)
-        self.dl5eu_dvbt_ofdm_synchronization_0 = dl5eu.dvbt_ofdm_synchronization(dtv.T2k, dtv.GI_1_32, 10, True, sync_sample_rate, squelch_threshold, False)
+        self.dl5eu_dvbt_reed_solomon_dec_0 = dl5eu.dvbt_reed_solomon_dec(2, 8, 0x11d, 255, 239, 8, 51, 8, False)
+        self.dl5eu_dvbt_ofdm_synchronization_0 = dl5eu.dvbt_ofdm_synchronization(dtv.T2k, dtv.GI_1_32, 10, True, 1142857.143, squelch_threshold, False)
+        self.dl5eu_dvbt_energy_descramble_0 = dl5eu.dvbt_energy_descramble(8)
         self.blocks_vector_to_stream_2_0 = blocks.vector_to_stream(gr.sizeof_gr_complex*1, 1512)
         self.blocks_vector_to_stream_1 = blocks.vector_to_stream(gr.sizeof_char*1, 1512)
         self.blocks_selector_1 = blocks.selector(gr.sizeof_gr_complex*1,decim_select,0)
@@ -342,8 +349,6 @@ class dvbt_rx_rtlsdr_ext(gr.top_block, Qt.QWidget):
         self.blocks_selector_0 = blocks.selector(gr.sizeof_gr_complex*1,0,decim_select)
         self.blocks_selector_0.set_enabled(True)
         self.blocks_null_sink_0_0 = blocks.null_sink(gr.sizeof_gr_complex*1705)
-        self.blocks_file_sink_0 = blocks.file_sink(gr.sizeof_char*1, 'D:\\Projekte\\GNURadio\\video.ts', False)
-        self.blocks_file_sink_0.set_unbuffered(False)
 
 
         ##################################################
@@ -359,22 +364,21 @@ class dvbt_rx_rtlsdr_ext(gr.top_block, Qt.QWidget):
         self.connect((self.blocks_selector_1, 0), (self.dl5eu_dvbt_ofdm_synchronization_0, 0))
         self.connect((self.blocks_vector_to_stream_1, 0), (self.dl5eu_dvbt_viterbi_decoder_0, 0))
         self.connect((self.blocks_vector_to_stream_2_0, 0), (self.qtgui_const_sink_x_0, 0))
+        self.connect((self.dl5eu_dvbt_energy_descramble_0, 0), (self.dl5eu_mpeg_ts_monitor_0, 0))
         self.connect((self.dl5eu_dvbt_ofdm_synchronization_0, 1), (self.blocks_null_sink_0_0, 0))
         self.connect((self.dl5eu_dvbt_ofdm_synchronization_0, 0), (self.dl5eu_dvbt_tps_decoder_0, 0))
         self.connect((self.dl5eu_dvbt_ofdm_synchronization_0, 2), (self.freq_error, 0))
         self.connect((self.dl5eu_dvbt_ofdm_synchronization_0, 3), (self.samp_error, 0))
+        self.connect((self.dl5eu_dvbt_reed_solomon_dec_0, 0), (self.dl5eu_dvbt_energy_descramble_0, 0))
         self.connect((self.dl5eu_dvbt_tps_decoder_0, 0), (self.blocks_vector_to_stream_2_0, 0))
         self.connect((self.dl5eu_dvbt_tps_decoder_0, 0), (self.dtv_dvbt_demap_0, 0))
         self.connect((self.dl5eu_dvbt_viterbi_decoder_0, 0), (self.dtv_dvbt_convolutional_deinterleaver_0, 0))
-        self.connect((self.dl5eu_mpeg_ts_monitor_0, 0), (self.blocks_file_sink_0, 0))
         self.connect((self.dl5eu_mpeg_ts_monitor_0, 0), (self.network_udp_sink_0, 0))
         self.connect((self.dtv_dvbt_bit_inner_deinterleaver_0, 0), (self.blocks_vector_to_stream_1, 0))
-        self.connect((self.dtv_dvbt_convolutional_deinterleaver_0, 0), (self.dtv_dvbt_reed_solomon_dec_0, 0))
+        self.connect((self.dtv_dvbt_convolutional_deinterleaver_0, 0), (self.dl5eu_dvbt_reed_solomon_dec_0, 0))
         self.connect((self.dtv_dvbt_demap_0, 0), (self.dtv_dvbt_symbol_inner_interleaver_0, 0))
-        self.connect((self.dtv_dvbt_energy_descramble_0, 0), (self.dl5eu_mpeg_ts_monitor_0, 0))
-        self.connect((self.dtv_dvbt_reed_solomon_dec_0, 0), (self.dtv_dvbt_energy_descramble_0, 0))
         self.connect((self.dtv_dvbt_symbol_inner_interleaver_0, 0), (self.dtv_dvbt_bit_inner_deinterleaver_0, 0))
-        self.connect((self.iio_pluto_source_0, 0), (self.blocks_selector_0, 0))
+        self.connect((self.osmosdr_source_0, 0), (self.blocks_selector_0, 0))
         self.connect((self.rational_resampler_xxx_0, 0), (self.blocks_selector_1, 0))
         self.connect((self.rational_resampler_xxx_1, 0), (self.blocks_selector_1, 1))
         self.connect((self.rational_resampler_xxx_2, 0), (self.blocks_selector_1, 2))
@@ -448,7 +452,6 @@ class dvbt_rx_rtlsdr_ext(gr.top_block, Qt.QWidget):
 
     def set_sync_sample_rate(self, sync_sample_rate):
         self.sync_sample_rate = sync_sample_rate
-        self.dl5eu_dvbt_ofdm_synchronization_0.set_sample_rate(self.sync_sample_rate)
 
     def get_squelch_threshold(self):
         return self.squelch_threshold
@@ -468,7 +471,7 @@ class dvbt_rx_rtlsdr_ext(gr.top_block, Qt.QWidget):
         	self._conf_rf_gain_db_config.add_section('setup')
         self._conf_rf_gain_db_config.set('setup', 'rf_gain_db', str(self.rf_gain_db))
         self._conf_rf_gain_db_config.write(open('config.ini', 'w'))
-        self.iio_pluto_source_0.set_gain(0, self.rf_gain_db)
+        self.osmosdr_source_0.set_gain(self.rf_gain_db, 0)
 
     def get_if_gain_db(self):
         return self.if_gain_db
@@ -481,6 +484,7 @@ class dvbt_rx_rtlsdr_ext(gr.top_block, Qt.QWidget):
         	self._conf_if_gain_db_config.add_section('setup')
         self._conf_if_gain_db_config.set('setup', 'if_gain_db', str(self.if_gain_db))
         self._conf_if_gain_db_config.write(open('config.ini', 'w'))
+        self.osmosdr_source_0.set_if_gain(self.if_gain_db, 0)
 
     def get_freq_corr_ppm(self):
         return self.freq_corr_ppm
@@ -493,6 +497,7 @@ class dvbt_rx_rtlsdr_ext(gr.top_block, Qt.QWidget):
         	self._conf_freq_corr_ppm_config.add_section('setup')
         self._conf_freq_corr_ppm_config.set('setup', 'freq_corr_ppm', str(self.freq_corr_ppm))
         self._conf_freq_corr_ppm_config.write(open('config.ini', 'w'))
+        self.osmosdr_source_0.set_freq_corr(self.freq_corr_ppm, 0)
 
     def get_center_freq(self):
         return self.center_freq
@@ -505,7 +510,7 @@ class dvbt_rx_rtlsdr_ext(gr.top_block, Qt.QWidget):
         	self._conf_center_freq_config.add_section('setup')
         self._conf_center_freq_config.set('setup', 'center_freq', str(self.center_freq))
         self._conf_center_freq_config.write(open('config.ini', 'w'))
-        self.iio_pluto_source_0.set_frequency(self.center_freq)
+        self.osmosdr_source_0.set_center_freq(self.center_freq, 0)
 
 
 

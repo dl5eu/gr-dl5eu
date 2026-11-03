@@ -17,7 +17,9 @@ list(APPEND dl5eu_sources
     dvbt_pilot_gen.cc
     dvbt_tps_decoder_impl.cc
     dvbt_viterbi_decoder_impl.cc
-    mpeg_ts_monitor_impl.cc)
+    mpeg_ts_monitor_impl.cc
+    dvbt_reed_solomon_dec_impl.cc
+    dvbt_energy_descramble_impl.cc)
 
 set(dl5eu_sources
     "${dl5eu_sources}"
@@ -28,7 +30,7 @@ if(NOT dl5eu_sources)
 endif(NOT dl5eu_sources)
 
 add_library(gnuradio-dl5eu SHARED ${dl5eu_sources})
-target_link_libraries(gnuradio-dl5eu gnuradio::gnuradio-runtime gnuradio-fft gnuradio-filter)
+target_link_libraries(gnuradio-dl5eu gnuradio::gnuradio-runtime gnuradio-fft gnuradio-filter gnuradio-fec)
 target_include_directories(
     gnuradio-dl5eu
     PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../include>
