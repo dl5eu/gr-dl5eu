@@ -1,41 +1,49 @@
+## [German version](docs/README.de.md)
+
 # gr-dl5eu — Narrowband DVB-T Reception with GNU Radio
 
 **gr-dl5eu** is an out-of-tree (OOT) module for [GNU Radio](https://www.gnuradio.org/) that provides additional signal-processing blocks for receiving narrowband DVB-T signals. Its primary goal is to make digital amateur television (DATV) reception in the 70 cm amateur radio band possible with affordable software-defined radio (SDR) hardware, including RTL-SDR dongles.
 
-The module also includes example receiver flowgraphs for GNU Radio Companion (GRC). The decoded MPEG transport stream can be sent over UDP and played using [VLC media player](https://www.videolan.org/vlc/) or another suitable player.
+The module also includes example receiver flowgraphs for GNU Radio Companion (GRC). The decoded MPEG transport stream can be sent over UDP and played using [VLC media player](https://www.videolan.org/vlc/) or any other suitable player.
 
 > **Project status:** This project is a work in progress. Its blocks, example flowgraphs, and configuration options are subject to change.
 
 ## Background and Motivation
 
-The starting point for this project was the search for a simple, inexpensive way to receive DVB-T transmissions with relatively small channel bandwidths in the 70 cm amateur radio band. IARU Region 1 has recommended a **maximum bandwidth of 2 MHz for digital amateur television (DATV)** in this band. This is a technical recommendation, not a substitute for the applicable national regulations and frequency plans. See the [IARU Region 1 VHF Managers Handbook, section 8.8.11](https://www.darc.de/fileadmin/filemounts/referate/vus/iaru/VHF_Handbook_V7_51.pdf).
+The starting point for this project was the search for a simple, inexpensive way to receive DVB-T transmissions with small channel bandwidths (max. 2 MHz) in the 70 cm amateur radio band.
 
-Many radio amateurs interested in SDR already own an RTL-SDR dongle. It therefore seemed worthwhile to investigate whether such a low-cost receiver, together with GNU Radio, could be used to receive narrowband DVB-T signals.
+Many radio amateurs interested in SDR already own an RTL-SDR dongle. The question was, whether such a low-cost receiver, together with GNU Radio, could be used to receive narrowband DVB-T signals.
 
-GNU Radio already provides most of the blocks needed to construct a DVB-T receiver through its [`gr-dtv` module](https://github.com/gnuradio/gnuradio/tree/main/gr-dtv). Initial experiments showed that a complete receiver could indeed be assembled and its decoded transport stream delivered to a UDP port. However, although reception was possible, it was not sufficiently reliable for continuous video playback.
+GNU Radio already provides the blocks needed to construct a DVB-T receiver through its [`gr-dtv` module](https://github.com/gnuradio/gnuradio/tree/main/gr-dtv). A complete receiver can be assembled and its decoded transport stream delivered to a UDP port. However, although reception is possible, it is not sufficiently reliable for continuous video playback.
+
+## Amateur Radio Operating Conditions
+
+Unlike conventional broadcast television, where a receiver normally remains tuned to a continuously available signal and a short delay when switching channels is acceptable, amateur radio operation is much more dynamic. DATV transmissions may be brief, stations may change frequently, and a signal may disappear and return unexpectedly. Another station may also start transmitting on the same frequency at any time.
+
+For this reason, a DVB-T receiver intended for amateur radio must not only maintain stable synchronization while a signal is present. It should also acquire an incoming signal as quickly and reliably as possible and recover promptly when reception is interrupted. Long acquisition times or repeated synchronization failures can make otherwise usable transmissions difficult to watch. These requirements are a central motivation for the **DVB-T OFDM Synchronization** block in gr-dl5eu. As with any DVB-T receiver, the configured reception parameters must match the incoming transmission; fast reacquisition does not imply automatic adaptation to every change in transmission parameters.
 
 ## Development History
 
 ### OFDM Synchronization
 
-A major difficulty was reliable OFDM symbol acquisition. Small differences between the transmitter and receiver sampling clocks cause the position of the cyclic prefix (guard interval) to drift relative to the receiver's sampling window. Without adequate sampling-rate correction and timing tracking, the symbol acquisition process can eventually lose synchronization. Reacquisition then interrupts the decoded video stream.
+A major difficulty was reliable OFDM symbol acquisition. While small differences between the transmitter and receiver frequencies are corrected during symbol acquisition, differences between the transmitter and receiver sampling clocks cause the position of the cyclic prefix (guard interval) to drift relative to the receiver's sampling window. Without adequate sampling-rate correction and timing tracking, the symbol acquisition process can eventually lose synchronization. Reacquisition then interrupts the decoded video stream.
 
-An important starting point for improving this behaviour was the [`gr-isdbt`](https://github.com/git-artes/gr-isdbt) project developed by Federico "Larroca" La Rocca and collaborators. Its **OFDM Synchronization** block combines OFDM symbol acquisition, FFT processing, and synchronization corrections, including compensation for sampling-clock errors. The project also provides a **TMCC Decoder** for the ISDB-T transmission parameters.
+An important starting point for improving this behaviour was the [`gr-isdbt`](https://github.com/git-artes/gr-isdbt) project developed by Federico "Larroca" La Rocca and collaborators. Its **OFDM Synchronization** block combines OFDM symbol acquisition, FFT processing, and synchronization corrections, including compensation for sampling-clock deviations. The project also provides a **TMCC Decoder** for the ISDB-T transmission parameters.
 
-Building on these implementations, I developed corresponding blocks for DVB-T. The OFDM synchronization and transmission-parameter decoding had to be adapted to the different signal structures of DVB-T and ISDB-T, including their pilot carriers and signaling mechanisms. DVB-T uses Transmission Parameter Signalling (TPS) rather than ISDB-T's TMCC.
+Building on these implementations, I have developed corresponding blocks for DVB-T. The OFDM synchronization and transmission-parameter decoding had to be adapted to the different signal structures of DVB-T and ISDB-T, including their pilot carriers and signaling mechanisms. DVB-T uses Transmission Parameter Signalling (TPS) rather than ISDB-T's TMCC.
 
 ### Reed-Solomon Decoding and Energy Descrambling
 
-Further receiver tests exposed another problem near the end of the decoding chain. GNU Radio's standard DVB-T Reed-Solomon decoder can detect codewords that cannot be corrected, but the affected MPEG transport packets are not explicitly marked as erroneous for downstream processing. Consequently, corrupted packet contents may pass through the standard energy descrambler without the MPEG-TS error indication being set. This can contribute to difficult-to-explain playback disturbances or frozen video.
+Further receiver tests exposed another problem near the end of the decoding chain. GNU Radio's standard DVB-T Reed-Solomon decoder can detect codewords that cannot be corrected, but the affected MPEG transport packets are not explicitly marked as erroneous for downstream processing. Consequently, corrupted packet contents may pass through the standard energy descrambler without the MPEG-TS error indication bit being set. This can contribute to difficult-to-explain playback disturbances or frozen video.
 
 To improve error handling, **gr-dl5eu** provides a modified pair of blocks:
 
 1. **DVB-T Reed-Solomon Decoder** corrects errors where possible and attaches an `rs_uncorrectable` stream tag to identify any codeword that could not be corrected.
 2. **DVB-T Energy Descramble** performs the usual energy descrambling and uses this information to set the MPEG-TS `transport_error_indicator` (TEI) bit in the corresponding 188-byte transport packet.
 
-The TEI flag identifies an erroneous packet; it does not repair its contents. Other reception problems can still cause interruptions, but this change prevents uncorrectable Reed-Solomon errors from passing through this part of the receiver without an appropriate transport-stream error indication.
+The TEI flag only identifies an erroneous packet; it does not repair its contents. Other reception problems can still cause interruptions, but this change prevents uncorrectable Reed-Solomon errors from passing through this part of the receiver without an appropriate transport-stream error indication.
 
-**For receivers built with gr-dl5eu, the DVB-T Reed-Solomon Decoder and DVB-T Energy Descramble blocks from this module are strongly recommended as a pair instead of their standard GNU Radio counterparts.**
+**For receivers built with gr-dl5eu, the DVB-T Reed-Solomon Decoder and DVB-T Energy Descramble blocks from this module are therefore strongly recommended as a pair instead of their standard GNU Radio counterparts.**
 
 ## Blocks Provided by gr-dl5eu
 
@@ -48,7 +56,7 @@ The TEI flag identifies an erroneous packet; it does not repair its contents. Ot
 | **DVB-T Reed-Solomon Decoder** | Performs outer forward-error-correction decoding and marks uncorrectable codewords using stream tags. |
 | **DVB-T Energy Descramble** | Reverses DVB-T energy dispersal and sets the transport error indicator for packets marked as uncorrectable. |
 
-The OFDM Synchronization and TPS Decoder blocks support the DVB-T **2K and 8K transmission modes**.
+The OFDM Synchronization and TPS Decoder blocks support the DVB-T **2K and 8K transmission modes**, although only the 2K transmission mode makes sense when small bandwidths are used.
 
 ### Additional Diagnostic Blocks
 
@@ -66,7 +74,7 @@ The [`examples`](https://github.com/dl5eu/gr-dl5eu/tree/main/examples) directory
 | [`dvbt_rx_rtlsdr.grc`](https://github.com/dl5eu/gr-dl5eu/blob/main/examples/dvbt_rx_rtlsdr.grc) | RTL-SDR dongle |
 | [`dvbt_rx_pluto.grc`](https://github.com/dl5eu/gr-dl5eu/blob/main/examples/dvbt_rx_pluto.grc) | ADALM-PLUTO SDR |
 
-Both examples provide controls for adapting reception to the transmitted signal, including **channel bandwidth, guard interval, modulation, and code rate**, as well as receiver-specific settings such as center frequency and gain.
+Both examples provide controls for adapting reception to the transmitted signal, including **channel bandwidth, guard interval, modulation, and code rate**, as well as receiver-specific settings such as center frequency and gain. Please note, that whenever one of these parameters is changed, a restart of the flowgraph is necessary. For this purpose, the interface provides a corresponding button.
 
 The flowgraphs use GNU Radio's **Variable Config** blocks to store selected settings in configuration files (`config_rtlsdr.ini` and `config_pluto.ini`, respectively), so that these settings can be reused when the receiver is started again.
 
@@ -102,7 +110,7 @@ The repository contains a CMake build system and a [Conda build recipe](https://
 
 ## Feedback and Contributions
 
-**gr-dl5eu is under active development**, and the software may continue to change as testing reveals further issues or opportunities for improvement.
+**gr-dl5eu is still under development**, and the software may continue to change as testing reveals further issues or opportunities for improvement.
 
 I would particularly welcome reports from other radio amateurs who try receiving narrowband DVB-T signals using this module and its example flowgraphs. Reports about the SDR hardware used, transmission parameters, reception stability, and any observed problems would be especially valuable.
 
