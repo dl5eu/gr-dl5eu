@@ -18,7 +18,7 @@ source:
   git_url: {{ environ.get('FEEDSTOCK_ROOT', "../..") }}  # [os.environ.get("CI")]
 
 build:
-  number: 3
+  number: 0
   ignore_run_exports_from:
     # this package only uses libboost-headers, but libboost-devel is needed
     # in host to ensure build compatibility with the gnuradio-core package
