@@ -6,7 +6,7 @@
 
 The module also includes example receiver flowgraphs for GNU Radio Companion (GRC). The decoded MPEG transport stream can be sent over UDP and played using [VLC media player](https://www.videolan.org/vlc/) or any other suitable player.
 
-> **Project status:** This project is a work in progress. Its blocks, example flowgraphs, and configuration options are subject to change.
+> **Project status:** This project is a work in progress. Its blocks, example flowgraphs, and configuration options are subject to change without notice.
 
 ## Background and Motivation
 
