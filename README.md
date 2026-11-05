@@ -1,6 +1,6 @@
-## [German version](docs/README.de.md)
-
 # gr-dl5eu — Narrowband DVB-T Reception with GNU Radio
+
+**[Deutsche Fassung](docs/README.de.md)**
 
 **gr-dl5eu** is an out-of-tree (OOT) module for [GNU Radio](https://www.gnuradio.org/) that provides additional signal-processing blocks for receiving narrowband DVB-T signals. Its primary goal is to make digital amateur television (DATV) reception in the 70 cm amateur radio band possible with affordable software-defined radio (SDR) hardware, including RTL-SDR dongles.
 

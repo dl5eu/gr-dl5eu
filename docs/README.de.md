@@ -1,6 +1,6 @@
-## [English version](../README.md)
-
 # gr-dl5eu — Schmalbandiger DVB-T-Empfang mit GNU Radio
+
+**[English version](../README.md)**
 
 **gr-dl5eu** ist ein Out-of-Tree-Modul (OOT) für [GNU Radio](https://www.gnuradio.org/), das zusätzliche Signalverarbeitungsblöcke für den Empfang schmalbandiger DVB-T-Signale bereitstellt. Das Hauptziel besteht darin, den Empfang von digitalem Amateurfunkfernsehen (DATV) im 70-cm-Amateurfunkband mit kostengünstiger SDR-Hardware (Software Defined Radio), darunter auch RTL-SDR-Sticks, zu ermöglichen.
 
