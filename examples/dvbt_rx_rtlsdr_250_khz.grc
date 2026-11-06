@@ -464,12 +464,12 @@ blocks:
       \ when\n# changing the available bandwidths; update the matching GRC resampler\
       \ ports.\nPLUTO_SAMPLE_RATE = 2400000\nBANDWIDTHS = (\n#    (\"2 MHz\", 20,\
       \ 21),\n#    (\"1 MHz\", 10, 21),\n#    (\"500 kHz\", 5, 21),\n#    (\"333 kHz\"\
-      , 160, 1009),\n    (\"250 kHz\", 5, 42),\n#    (\"125 kHz\", 5, 84),\n#    (\"\
-      66 kHz\", 280, 8909),\n)\n\n\ndef interpolation(index):\n    return BANDWIDTHS[int(index)][1]\n\
+      , 111, 700),\n    (\"250 kHz\", 5, 42),\n#    (\"125 kHz\", 5, 84),\n#    (\"\
+      66 kHz\", 11, 350),\n)\n\n\ndef interpolation(index):\n    return BANDWIDTHS[int(index)][1]\n\
       \n\ndef decimation(index):\n    return BANDWIDTHS[int(index)][2]\n\n\ndef sample_rate(index):\n\
       \    return PLUTO_SAMPLE_RATE * interpolation(index) / decimation(index)\n\n\
       \ndef labels():\n    return [entry[0] for entry in BANDWIDTHS]\n\n\ndef indices():\n\
-      \    return list(range(len(BANDWIDTHS)))"
+      \    return list(range(len(BANDWIDTHS)))\n"
   states:
     bus_sink: false
     bus_source: false
@@ -1804,7 +1804,7 @@ blocks:
     alpha8: '1.0'
     alpha9: '1.0'
     autoscale: 'False'
-    average: '0.2'
+    average: '0.1'
     axislabels: 'True'
     bw: sync_sample_rate
     color1: '"blue"'
