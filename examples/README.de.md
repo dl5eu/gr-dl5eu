@@ -29,6 +29,8 @@ Die Beispiele verwenden die eigenen Blöcke **DVB-T OFDM Synchronization**, **DV
 
 Die grafische Bedienoberfläche enthält Steuerelemente für die Übertragungsparameter sowie eine Spektrumanzeige, ein Konstellationsdiagramm und eine Anzeige des Frequenzfehlers. Diese erleichtern die Abstimmung und Fehlersuche. Die Schaltfläche **Restart** beendet den laufenden Flowgraph und startet das erzeugte Empfängerprogramm neu.
 
+Die Schaltfläche **Resynchronize** fordert beim OFDM-Synchronisator des aktuell gewählten Guardintervalls eine erneute Synchronisation an, ohne das Empfängerprogramm zu beenden oder neu zu starten. Dabei werden die Zeit- und Frequenznachführung des Synchronisators zurückgesetzt und die nachfolgenden Verarbeitungsblöcke zur erneuten Synchronisation aufgefordert. Dies kann nach einem Signalausfall oder dann hilfreich sein, wenn sich der Empfang nicht selbstständig erholt. Anders als bei **Restart** laufen der Flowgraph und das SDR-Frontend weiter; die eingestellten Empfangsparameter bleiben unverändert.
+
 ### Gemeinsame Empfangsparameter
 
 | Einstellung | Auswahlmöglichkeiten bzw. Einstellbereich |

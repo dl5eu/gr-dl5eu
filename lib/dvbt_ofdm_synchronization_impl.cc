@@ -934,35 +934,6 @@ dvbt_ofdm_synchronization_impl::dvbt_ofdm_synchronization_impl(
 dvbt_ofdm_synchronization_impl::~dvbt_ofdm_synchronization_impl() {}
 
 /*!
- * @brief Update the input sample rate and restart acquisition when it changes.
- * @param sample_rate New input sample rate after resampling, in samples per second.
- * @throws std::invalid_argument If sample_rate is not positive or finite.
- *
- * A changed rate invalidates the previous frequency and timing estimates. The
- * processing thread handles the requested restart without racing its tracking state.
- * Calling this function with the unchanged rate does not restart acquisition.
- */
-void dvbt_ofdm_synchronization_impl::set_sample_rate(double sample_rate)
-{
-    if (!std::isfinite(sample_rate) || sample_rate <= 0.0) {
-        throw std::invalid_argument("DVB-T sample rate must be positive and finite");
-    }
-    const double previous = d_sample_rate.exchange(sample_rate, std::memory_order_relaxed);
-    if (previous != sample_rate) {
-        request_resynchronization();
-    }
-}
-
-/*!
- * @brief Returns the configured nominal sample rate in samples per second.
- * @return Input sample rate after resampling, in samples per second.
- */
-double dvbt_ofdm_synchronization_impl::get_sample_rate() const
-{
-    return d_sample_rate.load(std::memory_order_relaxed);
-}
-
-/*!
  * @brief Request a controlled restart of OFDM acquisition from another thread.
  *
  * The processing thread resets its frequency, timing and symbol-phase state,
@@ -1049,12 +1020,12 @@ int dvbt_ofdm_synchronization_impl::general_work(int noutput_items,
         // Drain a bounded 250 ms of input before attempting new CP acquisition.
         // This is a practical buffer guard, not a guarantee for arbitrarily large
         // upstream queues. Its duration is independent of the bandwidth list.
-        const double discard = std::min(std::ceil(get_sample_rate() * 0.25),
+        const double discard = std::min(std::ceil(d_sample_rate * 0.25),
                                         static_cast<double>(std::numeric_limits<int>::max()));
         d_reconfiguration_discard_remaining = static_cast<uint64_t>(discard);
         std::fprintf(stderr,
                      "BANDWIDTH_RESTART: sample_rate=%.3f, discard=%" PRIu64 " samples\n",
-                     get_sample_rate(), d_reconfiguration_discard_remaining);
+                     d_sample_rate, d_reconfiguration_discard_remaining);
     }
 
     if (d_reconfiguration_discard_remaining != 0) {
@@ -1450,7 +1421,7 @@ int dvbt_ofdm_synchronization_impl::general_work(int noutput_items,
                 // Display receiver frequency minus signal frequency, in Hz.
                 out_freq_error[i] = static_cast<float>(
                     -(d_total_freq_error / (2.0 * GR_M_PI)) *
-                    (get_sample_rate() / d_fft_length));
+                    (d_sample_rate / d_fft_length));
             }
             if (samp_error_output_connected) {
                 // Convert relative sampling-rate error to ppm.

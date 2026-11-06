@@ -6,7 +6,6 @@ templates:
   imports: from gnuradio import dl5eu
   make: dl5eu.dvbt_ofdm_synchronization(${transmission_mode.val}, ${guard_interval.val}, ${snr}, ${interpolate}, ${sample_rate}, ${squelch_db}, ${diagnostics})
   callbacks:
-  - set_sample_rate(${sample_rate})
   - set_squelch_threshold(${squelch_db})
 
 parameters:
@@ -84,8 +83,8 @@ documentation: |-
   The optional sampling-rate-error output is in ppm.
   Sample Rate is the nominal complex sample rate at this block input,
   i.e. AFTER any Rational Resampler or decimating low-pass filter.
-  Changing the nominal sample rate while running requests fresh acquisition
-  and marks the next output with sync_start for downstream decoder restart.
+  The block uses the rate supplied at construction. Restart the receiver
+  with the new rate after changing the channel bandwidth.
   For DVB-T channels it is usually 8/7 times the channel bandwidth.
   Squelch is based on uncalibrated mean digital IQ power at this block input.
   It is not a calibrated RF level (dBm); the optimum value depends on gain

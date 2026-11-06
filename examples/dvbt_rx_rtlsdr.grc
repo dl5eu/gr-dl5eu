@@ -384,6 +384,23 @@ blocks:
     coordinate: [1552, 12.0]
     rotation: 0
     state: enabled
+- name: resync
+  id: variable_qtgui_push_button
+  parameters:
+    comment: ''
+    gui_hint: 5, 1, 1, 2
+    label: Resynchronize
+    pressed: '1'
+    released: '0'
+    type: bool
+    value: '0'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [1696, 12.0]
+    rotation: 0
+    state: enabled
 - name: rf_gain_db
   id: variable_qtgui_range
   parameters:
@@ -2048,7 +2065,12 @@ blocks:
       \        [sys.executable, os.path.abspath(sys.argv[0]), *sys.argv[1:]]\n   \
       \ )\n\ndef set_restart(value):\n    original_set_restart(value)\n\n    if value:\n\
       \        QtCore.QTimer.singleShot(0, restart_program)\n\nself.set_restart =\
-      \ set_restart"
+      \ set_restart\n\nsynchronizers = (\n    self.dl5eu_dvbt_ofdm_synchronization_0,\
+      \  # 1/4\n    self.dl5eu_dvbt_ofdm_synchronization_1,  # 1/8\n    self.dl5eu_dvbt_ofdm_synchronization_2,\
+      \  # 1/16\n    self.dl5eu_dvbt_ofdm_synchronization_3,  # 1/32\n)\n\noriginal_set_resync\
+      \ = self.set_resync\n\ndef set_resync(value):\n    original_set_resync(value)\n\
+      \    if value:\n        synchronizers[self.guard_interval].request_resynchronization()\n\
+      \nself.set_resync = set_resync"
     comment: ''
     priority: '0'
     section: main_after_init

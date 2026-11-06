@@ -29,6 +29,8 @@ The examples use the custom **DVB-T OFDM Synchronization**, **DVB-T TPS Decoder*
 
 The graphical interface provides transmission-parameter controls, a spectrum display, a constellation display and a frequency-error indication for tuning and troubleshooting. The **Restart** button stops the running flowgraph and restarts the generated receiver program.
 
+The **Resynchronize** button requests a fresh OFDM acquisition from the synchronizer associated with the currently selected guard interval, without stopping or restarting the receiver program. It resets the synchronizer's timing and frequency tracking and signals downstream processing blocks to reacquire synchronization. This can be useful after signal loss or if reception does not recover automatically. Unlike **Restart**, it keeps the flowgraph and SDR front end running and does not change the selected receiver parameters.
+
 ### Common Receiver Settings
 
 | Setting | Available values or range |

@@ -65,7 +65,7 @@ private:
 
     const int d_fft_length;
     const int d_cp_length;
-    std::atomic<double> d_sample_rate;
+    const double d_sample_rate;
     std::atomic<bool> d_resynchronization_requested{ false };
     uint64_t d_reconfiguration_discard_remaining{ 0 };
     std::atomic<float> d_squelch_db;
@@ -388,7 +388,7 @@ public:
      * @param guard_interval Configured cyclic-prefix fraction.
      * @param snr Assumed SNR in dB for ML weighting; not a measured output SNR.
      * @param interpolate Enable MMSE sampling-clock correction.
-     * @param sample_rate Input complex-sample rate in samples/s, used for Hz conversion.
+     * @param sample_rate Fixed input rate in samples/s for Hz conversion and the restart discard interval.
      * @param squelch_db Digital IQ opening threshold in dBFS; values <= -200 disable it.
      * @param diagnostics Enable extended CP-loss probes, not all event messages.
      * @throws std::invalid_argument If sample rate is not positive/finite or the
@@ -403,8 +403,6 @@ public:
                                    bool diagnostics);
     ~dvbt_ofdm_synchronization_impl();
 
-    void set_sample_rate(double sample_rate) override;
-    double get_sample_rate() const override;
     void request_resynchronization() override;
 
     /*!

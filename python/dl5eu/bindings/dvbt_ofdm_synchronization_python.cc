@@ -14,7 +14,7 @@
 /* BINDTOOL_GEN_AUTOMATIC(0)                                                       */
 /* BINDTOOL_USE_PYGCCXML(0)                                                        */
 /* BINDTOOL_HEADER_FILE(dvbt_ofdm_synchronization.h) */
-/* BINDTOOL_HEADER_FILE_HASH(aaf98f312919350b2b4e531ece30048d)                     */
+/* BINDTOOL_HEADER_FILE_HASH(5437d6dc02f5e29f67db96e31238bdc4)                     */
 /***********************************************************************************/
 
 #include <pybind11/complex.h>
@@ -49,13 +49,6 @@ void bind_dvbt_ofdm_synchronization(py::module& m)
              py::arg("diagnostics") = false,
              D(dvbt_ofdm_synchronization, make))
 
-        .def("set_sample_rate",
-             &dvbt_ofdm_synchronization::set_sample_rate,
-             py::arg("sample_rate"),
-             "Set the nominal input sample rate in Hz while running.")
-        .def("get_sample_rate",
-             &dvbt_ofdm_synchronization::get_sample_rate,
-             "Return the nominal input sample rate in Hz.")
         .def("request_resynchronization",
              &dvbt_ofdm_synchronization::request_resynchronization,
              "Restart OFDM acquisition at the next processing opportunity.")
