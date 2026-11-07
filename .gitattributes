@@ -1,2 +1,18 @@
-# Auto detect text files and perform LF normalization
-* text=auto
+## Auto detect text files and perform LF normalization
+#* text=auto
+
+# Use LF for all text files on every platform
+* text=auto eol=lf
+
+# Windows batch scripts require CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary files must not be modified
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.zip binary
